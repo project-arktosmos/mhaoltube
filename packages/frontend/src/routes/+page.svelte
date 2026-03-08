@@ -54,13 +54,12 @@
 
 	let metadataLoading = $derived(youtubeLoading);
 
-	// Scan all libraries state
 	let scanning = $state(false);
 
 	async function handleScanAll() {
 		scanning = true;
 		try {
-			await libraryService.scanAllLibraries();
+			await libraryService.scanFiles();
 			await invalidateAll();
 		} finally {
 			scanning = false;
@@ -148,7 +147,7 @@
 	}
 
 	function handlePlay(item: MediaItem) {
-		const streamUrl = apiUrl(`/api/libraries/${item.libraryId}/items/${item.id}/stream`);
+		const streamUrl = apiUrl(`/api/libraries/items/${item.id}/stream`);
 		window.open(streamUrl, '_blank');
 	}
 
@@ -243,7 +242,7 @@
 		if (!linkModalItem) return;
 		const item = linkModalItem;
 
-		const res = await fetch(apiUrl(`/api/libraries/${item.libraryId}/items/${item.id}/youtube`), {
+		const res = await fetch(apiUrl(`/api/libraries/items/${item.id}/youtube`), {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ youtubeId })
@@ -262,12 +261,9 @@
 	}
 
 	async function handleUnlink(item: MediaItem, service: string) {
-		const res = await fetch(
-			apiUrl(`/api/libraries/${item.libraryId}/items/${item.id}/${service}`),
-			{
-				method: 'DELETE'
-			}
-		);
+		const res = await fetch(apiUrl(`/api/libraries/items/${item.id}/${service}`), {
+			method: 'DELETE'
+		});
 
 		if (res.ok) {
 			updateItemLinks(item.id, service, null);

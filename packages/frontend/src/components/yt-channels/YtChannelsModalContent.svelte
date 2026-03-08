@@ -1,13 +1,20 @@
 <script lang="ts">
 	import { apiUrl } from '$lib/api-base';
-	import type { YouTubeChannelFeedVideo, YouTubeChannelFeedResponse } from '$types/youtube.type';
+	import type {
+		YouTubeRssVideo,
+		YouTubeRssFeedResponse,
+		YouTubeChannelMeta
+	} from '$types/youtube.type';
 
 	interface YouTubeChannel {
 		id: string;
 		handle: string;
 		name: string;
 		url: string;
+		subscriber_text: string | null;
+		image_url: string | null;
 		created_at: string;
+		updated_at: string;
 	}
 
 	interface TableDetailResponse {
@@ -27,13 +34,14 @@
 	let error = $state<string | null>(null);
 	let pagination = $state<TableDetailResponse['pagination'] | null>(null);
 
+	// Channel metadata (avatar, description, subscribers)
+	let channelMeta: Record<string, YouTubeChannelMeta> = $state({});
+
 	// Feed drill-down state
 	let selectedChannel = $state<YouTubeChannel | null>(null);
-	let feedVideos: YouTubeChannelFeedVideo[] = $state([]);
+	let feedVideos: YouTubeRssVideo[] = $state([]);
 	let feedLoading = $state(false);
 	let feedError = $state<string | null>(null);
-	let feedContinuation = $state<string | null>(null);
-	let feedLoadingMore = $state(false);
 
 	async function fetchChannels(page: number = 1) {
 		loading = true;
@@ -46,6 +54,7 @@
 			const data: TableDetailResponse = await res.json();
 			channels = data.rows;
 			pagination = data.pagination;
+			fetchAllChannelMeta(data.rows);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -53,18 +62,48 @@
 		}
 	}
 
-	async function fetchChannelFeed(channel: YouTubeChannel) {
+	async function fetchAllChannelMeta(rows: YouTubeChannel[]) {
+		// Populate from DB-cached fields first for instant display
+		const initial: Record<string, YouTubeChannelMeta> = {};
+		const needsFetch: YouTubeChannel[] = [];
+		for (const channel of rows) {
+			if (channel.image_url && channel.subscriber_text) {
+				initial[channel.handle] = {
+					channelId: channel.id,
+					avatar: channel.image_url,
+					description: '',
+					subscriberText: channel.subscriber_text
+				};
+			} else {
+				needsFetch.push(channel);
+			}
+		}
+		channelMeta = { ...channelMeta, ...initial };
+
+		// Fetch remaining from YouTube (backend will cache for next time)
+		for (const channel of needsFetch) {
+			if (channelMeta[channel.handle]) continue;
+			try {
+				const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${channel.handle}`));
+				if (!res.ok) continue;
+				const data: YouTubeChannelMeta = await res.json();
+				channelMeta = { ...channelMeta, [channel.handle]: data };
+			} catch {
+				// Silently ignore metadata fetch failures
+			}
+		}
+	}
+
+	async function fetchChannelRss(channel: YouTubeChannel) {
 		selectedChannel = channel;
 		feedLoading = true;
 		feedError = null;
 		feedVideos = [];
-		feedContinuation = null;
 		try {
-			const res = await fetch(apiUrl(`/api/youtube/channel-feed?channelId=${channel.id}`));
+			const res = await fetch(apiUrl(`/api/youtube/channel-rss?handle=${channel.handle}`));
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data: YouTubeChannelFeedResponse = await res.json();
+			const data: YouTubeRssFeedResponse = await res.json();
 			feedVideos = data.videos;
-			feedContinuation = data.continuation;
 		} catch (e) {
 			feedError = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -72,31 +111,10 @@
 		}
 	}
 
-	async function loadMoreVideos() {
-		if (!selectedChannel || !feedContinuation || feedLoadingMore) return;
-		feedLoadingMore = true;
-		try {
-			const params = new URLSearchParams({
-				channelId: selectedChannel.id,
-				continuation: feedContinuation
-			});
-			const res = await fetch(apiUrl(`/api/youtube/channel-feed?${params}`));
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data: YouTubeChannelFeedResponse = await res.json();
-			feedVideos = [...feedVideos, ...data.videos];
-			feedContinuation = data.continuation;
-		} catch (e) {
-			feedError = e instanceof Error ? e.message : String(e);
-		} finally {
-			feedLoadingMore = false;
-		}
-	}
-
 	function goBack() {
 		selectedChannel = null;
 		feedVideos = [];
 		feedError = null;
-		feedContinuation = null;
 	}
 
 	$effect(() => {
@@ -123,7 +141,7 @@
 			Back
 		</button>
 		<h3 class="mt-2 text-lg font-bold">{selectedChannel.name}</h3>
-		<p class="text-sm text-base-content/60">@{selectedChannel.handle} — Latest videos</p>
+		<p class="text-sm text-base-content/60">@{selectedChannel.handle} — Latest videos (RSS)</p>
 	</div>
 
 	{#if feedError}
@@ -150,18 +168,13 @@
 					rel="noopener noreferrer"
 					class="flex gap-3 rounded-lg bg-base-200 p-3 transition-colors hover:bg-base-300"
 				>
-					<div class="relative shrink-0">
+					<div class="shrink-0">
 						<img
-							src={video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`}
+							src={video.thumbnail}
 							alt={video.title}
 							class="h-20 w-36 rounded-md object-cover"
 							loading="lazy"
 						/>
-						{#if video.durationText}
-							<span class="absolute right-1 bottom-1 rounded bg-black/80 px-1 text-xs text-white">
-								{video.durationText}
-							</span>
-						{/if}
 					</div>
 					<div class="min-w-0 flex-1">
 						<p class="line-clamp-2 font-medium">{video.title}</p>
@@ -175,18 +188,6 @@
 				</a>
 			{/each}
 		</div>
-
-		{#if feedContinuation}
-			<div class="mt-3 flex justify-center">
-				<button class="btn btn-ghost btn-sm" disabled={feedLoadingMore} onclick={loadMoreVideos}>
-					{#if feedLoadingMore}
-						<span class="loading loading-sm loading-spinner"></span>
-					{:else}
-						Load more
-					{/if}
-				</button>
-			</div>
-		{/if}
 	{/if}
 {:else}
 	<!-- Channel grid view -->
@@ -215,27 +216,41 @@
 	{:else}
 		<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
 			{#each channels as channel (channel.id)}
+				{@const meta = channelMeta[channel.handle]}
+				{@const avatar = channel.image_url || meta?.avatar}
+				{@const subscriberText = channel.subscriber_text || meta?.subscriberText}
 				<button
-					onclick={() => fetchChannelFeed(channel)}
+					onclick={() => fetchChannelRss(channel)}
 					class="flex items-center gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
 				>
-					<div
-						class="flex h-10 w-10 items-center justify-center rounded-full bg-error/10 text-error"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="currentColor"
+					{#if avatar}
+						<img
+							src={apiUrl(`/api/youtube/image-proxy?url=${encodeURIComponent(avatar)}`)}
+							alt={channel.name}
+							class="h-10 w-10 shrink-0 rounded-full object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<div
+							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error/10 text-error"
 						>
-							<path
-								d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"
-							/>
-						</svg>
-					</div>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+							>
+								<path
+									d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"
+								/>
+							</svg>
+						</div>
+					{/if}
 					<div class="min-w-0 flex-1">
 						<p class="truncate font-medium">{channel.name}</p>
-						<p class="truncate text-sm opacity-50">@{channel.handle}</p>
+						<p class="truncate text-sm opacity-50">
+							@{channel.handle}{subscriberText ? ` · ${subscriberText}` : ''}
+						</p>
 					</div>
 				</button>
 			{/each}

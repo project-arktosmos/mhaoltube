@@ -14,7 +14,7 @@
 
 <nav class={wrapperClasses}>
 	<div class="flex-1">
-		<a href="/" class="btn text-xl btn-ghost">Mhaol</a>
+		<a href="/" class="btn text-xl btn-ghost">Mhaol<span class="text-primary">Tube</span></a>
 	</div>
 
 	<div class="flex-none">
@@ -33,7 +33,7 @@
 				class="btn btn-sm btn-neutral"
 				onclick={() => modalRouterService.openNavbar('libraries')}
 			>
-				Libraries
+				Library
 			</button>
 			<button
 				class="btn btn-ghost btn-sm"
@@ -41,10 +41,7 @@
 			>
 				Settings
 			</button>
-			<button
-				class="btn btn-ghost btn-sm"
-				onclick={() => modalRouterService.openNavbar('db')}
-			>
+			<button class="btn btn-ghost btn-sm" onclick={() => modalRouterService.openNavbar('db')}>
 				DB
 			</button>
 			<button
@@ -85,11 +82,13 @@
 					<button onclick={() => modalRouterService.openNavbar('youtube-search')}>YT Search</button>
 				</li>
 				<li>
-					<button onclick={() => modalRouterService.openNavbar('libraries')}>Libraries</button>
+					<button onclick={() => modalRouterService.openNavbar('libraries')}>Library</button>
 				</li>
 				<li><button onclick={() => modalRouterService.openNavbar('settings')}>Settings</button></li>
 				<li><button onclick={() => modalRouterService.openNavbar('db')}>DB</button></li>
-				<li><button onclick={() => modalRouterService.openNavbar('yt-channels')}>YT Channels</button></li>
+				<li>
+					<button onclick={() => modalRouterService.openNavbar('yt-channels')}>YT Channels</button>
+				</li>
 				<li><ThemeToggle /></li>
 			</ul>
 		</div>

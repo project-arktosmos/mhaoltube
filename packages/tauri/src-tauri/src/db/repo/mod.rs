@@ -10,6 +10,7 @@ pub mod youtube_download;
 pub mod media_list;
 pub mod media_list_item;
 pub mod media_list_link;
+pub mod youtube_channel;
 
 pub use settings::SettingsRepo;
 pub use metadata::MetadataRepo;
@@ -23,3 +24,4 @@ pub use youtube_download::YouTubeDownloadRepo;
 pub use media_list::MediaListRepo;
 pub use media_list_item::MediaListItemRepo;
 pub use media_list_link::MediaListLinkRepo;
+pub use youtube_channel::YouTubeChannelRepo;

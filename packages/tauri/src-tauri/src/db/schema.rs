@@ -166,17 +166,28 @@ CREATE TABLE IF NOT EXISTS youtube_channels (
     handle TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     url TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    subscriber_text TEXT,
+    image_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TRIGGER IF NOT EXISTS youtube_channels_updated_at
+    AFTER UPDATE ON youtube_channels
+    FOR EACH ROW
+BEGIN
+    UPDATE youtube_channels SET updated_at = datetime('now') WHERE id = OLD.id;
+END;
 ";
 
 const SEED_SQL: &str = "
-INSERT OR REPLACE INTO metadata (key, value, type) VALUES ('db_version', '20', 'number');
+INSERT OR REPLACE INTO metadata (key, value, type) VALUES ('db_version', '22', 'number');
 INSERT OR IGNORE INTO metadata (key, value, type) VALUES ('created_at', datetime('now'), 'string');
 
 INSERT OR IGNORE INTO media_types (id, label) VALUES ('video', 'Video');
 INSERT OR IGNORE INTO media_types (id, label) VALUES ('image', 'Image');
 INSERT OR IGNORE INTO media_types (id, label) VALUES ('audio', 'Audio');
+INSERT OR IGNORE INTO media_types (id, label) VALUES ('other', 'Other');
 
 INSERT OR IGNORE INTO categories (id, media_type_id, label) VALUES ('tv', 'video', 'TV');
 INSERT OR IGNORE INTO categories (id, media_type_id, label) VALUES ('movies', 'video', 'Movies');
@@ -398,6 +409,53 @@ fn run_migrations(conn: &Connection) {
         );
     }
 
+    // Migration: add subscriber_text, image_url, updated_at to youtube_channels
+    if has_table(conn, "youtube_channels") && !has_column(conn, "youtube_channels", "subscriber_text")
+    {
+        let _ = conn.execute_batch(
+            "ALTER TABLE youtube_channels ADD COLUMN subscriber_text TEXT;
+             ALTER TABLE youtube_channels ADD COLUMN image_url TEXT;
+             ALTER TABLE youtube_channels ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'));
+             CREATE TRIGGER IF NOT EXISTS youtube_channels_updated_at
+                 AFTER UPDATE ON youtube_channels FOR EACH ROW
+             BEGIN UPDATE youtube_channels SET updated_at = datetime('now') WHERE id = OLD.id; END;",
+        );
+    }
+
+    // Migration: consolidate all libraries into a single "default" library
+    if has_table(conn, "libraries") {
+        let has_default: bool = conn
+            .prepare("SELECT id FROM libraries WHERE id = 'default'")
+            .and_then(|mut s| s.exists([]))
+            .unwrap_or(false);
+        if !has_default {
+            // If there are existing libraries, migrate the first one to 'default'
+            let first_lib_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM libraries ORDER BY date_added ASC LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
+            if let Some(old_id) = first_lib_id {
+                let _ = conn.execute_batch(&format!(
+                    "UPDATE library_items SET library_id = 'default' WHERE library_id = '{}';
+                     UPDATE media_lists SET library_id = 'default' WHERE library_id = '{}';
+                     UPDATE libraries SET id = 'default', name = 'Library', media_types = '[\"video\",\"image\",\"audio\",\"other\"]' WHERE id = '{}';
+                     DELETE FROM libraries WHERE id != 'default';",
+                    old_id, old_id, old_id
+                ));
+            }
+        } else {
+            // Default exists, remove any others
+            let _ = conn.execute_batch(
+                "DELETE FROM library_items WHERE library_id != 'default';
+                 DELETE FROM media_lists WHERE library_id != 'default';
+                 DELETE FROM libraries WHERE id != 'default';",
+            );
+        }
+    }
+
     // Migration: drop removed tables from older databases
     let _ = conn.execute_batch(
         "DROP TABLE IF EXISTS torrent_downloads;
@@ -453,7 +511,7 @@ mod tests {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM media_types", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))

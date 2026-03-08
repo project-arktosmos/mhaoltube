@@ -400,7 +400,7 @@ Prefer DaisyUI classes for common UI patterns:
 
 ```html
 <!-- Buttons -->
-<button class="btn btn-primary btn-sm">Click</button>
+<button class="btn btn-sm btn-primary">Click</button>
 
 <!-- Cards -->
 <div class="card bg-base-100 shadow-xl">
@@ -408,7 +408,7 @@ Prefer DaisyUI classes for common UI patterns:
 </div>
 
 <!-- Inputs -->
-<input class="input input-bordered input-primary" />
+<input class="input-bordered input input-primary" />
 
 <!-- Badges -->
 <span class="badge badge-success">Active</span>

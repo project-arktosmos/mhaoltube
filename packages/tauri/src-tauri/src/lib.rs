@@ -72,6 +72,7 @@ pub struct AppState {
     pub media_lists: MediaListRepo,
     pub media_list_items: MediaListItemRepo,
     pub media_list_links: MediaListLinkRepo,
+    pub youtube_channels: YouTubeChannelRepo,
     pub module_registry: Arc<RwLock<ModuleRegistry>>,
     #[cfg(not(target_os = "android"))]
     pub ytdl_manager: Arc<DownloadManager>,
@@ -95,6 +96,7 @@ impl AppState {
             media_lists: MediaListRepo::new(Arc::clone(&db)),
             media_list_items: MediaListItemRepo::new(Arc::clone(&db)),
             media_list_links: MediaListLinkRepo::new(Arc::clone(&db)),
+            youtube_channels: YouTubeChannelRepo::new(Arc::clone(&db)),
             module_registry: Arc::new(RwLock::new(ModuleRegistry::new())),
             #[cfg(not(target_os = "android"))]
             ytdl_manager: {
@@ -125,20 +127,28 @@ impl AppState {
         registry.initialize(self);
     }
 
-    /// Seed a default library if no libraries exist, located in the mhaoltube data directory.
+    /// The fixed ID for the single default library.
+    pub const DEFAULT_LIBRARY_ID: &'static str = "default";
+
+    /// Ensure the single default library exists, located in the mhaoltube data directory.
     pub fn seed_default_library(&self) {
-        if self.libraries.get_all().is_empty() {
-            let library_path = default_data_dir();
-            let library_path_str = library_path.to_string_lossy();
-            self.libraries.insert(
-                &uuid::Uuid::new_v4().to_string(),
-                "Default",
-                &library_path_str,
-                "[\"video\",\"image\",\"audio\",\"other\"]",
-                chrono::Utc::now().timestamp_millis(),
-            );
-            tracing::info!("Created default library at {}", library_path_str);
+        if self.libraries.get(Self::DEFAULT_LIBRARY_ID).is_some() {
+            return;
         }
+        let library_path = default_data_dir();
+        let library_path_str = library_path.to_string_lossy();
+        self.libraries.insert(
+            Self::DEFAULT_LIBRARY_ID,
+            "Library",
+            &library_path_str,
+            "[\"video\",\"image\",\"audio\",\"other\"]",
+            chrono::Utc::now().timestamp_millis(),
+        );
+        self.metadata
+            .set_string("youtube.libraryId", Self::DEFAULT_LIBRARY_ID);
+        self.metadata
+            .set_string("torrent.libraryId", Self::DEFAULT_LIBRARY_ID);
+        tracing::info!("Created default library at {}", library_path_str);
     }
 }
 
