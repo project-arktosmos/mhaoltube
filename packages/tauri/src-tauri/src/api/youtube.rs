@@ -371,22 +371,33 @@ struct RssFeedResponse {
 
 #[derive(Deserialize)]
 struct RssFeedQuery {
-    #[serde(rename = "channelId")]
-    channel_id: String,
+    handle: String,
 }
 
 async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
-    if query.channel_id.is_empty() {
+    if query.handle.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Missing channelId parameter" })),
+            Json(serde_json::json!({ "error": "Missing handle parameter" })),
         )
             .into_response();
     }
 
+    // Resolve YouTube handle to real channel ID by fetching the channel page
+    let channel_id = match resolve_channel_id(&query.handle).await {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e })),
+            )
+                .into_response()
+        }
+    };
+
     let url = format!(
         "https://www.youtube.com/feeds/videos.xml?channel_id={}",
-        query.channel_id
+        channel_id
     );
 
     let resp = match reqwest::get(&url).await {
@@ -422,11 +433,44 @@ async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
     let (channel_name, videos) = parse_rss_feed(&xml);
 
     Json(RssFeedResponse {
-        channel_id: query.channel_id,
+        channel_id,
         channel_name,
         videos,
     })
     .into_response()
+}
+
+/// Resolve a YouTube handle (e.g. "ChrisJamesTV") to the real UC... channel ID
+/// by fetching the channel page and extracting the channel ID from the HTML.
+async fn resolve_channel_id(handle: &str) -> Result<String, String> {
+    let page_url = format!("https://www.youtube.com/@{}", handle);
+    let resp = reqwest::get(&page_url)
+        .await
+        .map_err(|e| format!("Failed to fetch channel page: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Channel page returned {}", resp.status()));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read channel page: {}", e))?;
+
+    // Look for "externalId":"UC..." or "channelId":"UC..." in the page HTML
+    for pattern in &["\"externalId\":\"", "\"channelId\":\""] {
+        if let Some(start) = html.find(pattern) {
+            let rest = &html[start + pattern.len()..];
+            if let Some(end) = rest.find('"') {
+                let id = &rest[..end];
+                if id.starts_with("UC") {
+                    return Ok(id.to_string());
+                }
+            }
+        }
+    }
+
+    Err("Could not find channel ID in page".to_string())
 }
 
 fn parse_rss_feed(xml: &str) -> (String, Vec<RssVideo>) {

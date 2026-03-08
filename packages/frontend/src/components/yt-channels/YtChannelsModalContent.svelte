@@ -57,7 +57,7 @@
 		feedError = null;
 		feedVideos = [];
 		try {
-			const res = await fetch(apiUrl(`/api/youtube/channel-rss?channelId=${channel.id}`));
+			const res = await fetch(apiUrl(`/api/youtube/channel-rss?handle=${channel.handle}`));
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data: YouTubeRssFeedResponse = await res.json();
 			feedVideos = data.videos;
