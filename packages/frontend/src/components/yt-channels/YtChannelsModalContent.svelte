@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { apiUrl } from '$lib/api-base';
-	import type { YouTubeRssVideo, YouTubeRssFeedResponse } from '$types/youtube.type';
+	import type {
+		YouTubeRssVideo,
+		YouTubeRssFeedResponse,
+		YouTubeChannelMeta
+	} from '$types/youtube.type';
 
 	interface YouTubeChannel {
 		id: string;
@@ -27,6 +31,9 @@
 	let error = $state<string | null>(null);
 	let pagination = $state<TableDetailResponse['pagination'] | null>(null);
 
+	// Channel metadata (avatar, description, subscribers)
+	let channelMeta: Record<string, YouTubeChannelMeta> = $state({});
+
 	// Feed drill-down state
 	let selectedChannel = $state<YouTubeChannel | null>(null);
 	let feedVideos: YouTubeRssVideo[] = $state([]);
@@ -44,10 +51,29 @@
 			const data: TableDetailResponse = await res.json();
 			channels = data.rows;
 			pagination = data.pagination;
+			fetchAllChannelMeta(data.rows);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			loading = false;
+		}
+	}
+
+	function fetchAllChannelMeta(rows: YouTubeChannel[]) {
+		for (const channel of rows) {
+			if (channelMeta[channel.handle]) continue;
+			fetchChannelMeta(channel.handle);
+		}
+	}
+
+	async function fetchChannelMeta(handle: string) {
+		try {
+			const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${handle}`));
+			if (!res.ok) return;
+			const data: YouTubeChannelMeta = await res.json();
+			channelMeta = { ...channelMeta, [handle]: data };
+		} catch {
+			// Silently ignore metadata fetch failures
 		}
 	}
 
@@ -173,27 +199,39 @@
 	{:else}
 		<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
 			{#each channels as channel (channel.id)}
+				{@const meta = channelMeta[channel.handle]}
 				<button
 					onclick={() => fetchChannelRss(channel)}
 					class="flex items-center gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
 				>
-					<div
-						class="flex h-10 w-10 items-center justify-center rounded-full bg-error/10 text-error"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="currentColor"
+					{#if meta?.avatar}
+						<img
+							src={meta.avatar}
+							alt={channel.name}
+							class="h-10 w-10 shrink-0 rounded-full object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<div
+							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error/10 text-error"
 						>
-							<path
-								d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"
-							/>
-						</svg>
-					</div>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+							>
+								<path
+									d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"
+								/>
+							</svg>
+						</div>
+					{/if}
 					<div class="min-w-0 flex-1">
 						<p class="truncate font-medium">{channel.name}</p>
-						<p class="truncate text-sm opacity-50">@{channel.handle}</p>
+						<p class="truncate text-sm opacity-50">
+							@{channel.handle}{meta?.subscriberText ? ` · ${meta.subscriberText}` : ''}
+						</p>
 					</div>
 				</button>
 			{/each}

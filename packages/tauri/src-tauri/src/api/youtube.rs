@@ -14,6 +14,7 @@ pub fn router() -> Router<AppState> {
         .route("/oembed", get(oembed))
         .route("/channel-feed", get(channel_feed))
         .route("/channel-rss", get(channel_rss))
+        .route("/channel-meta", get(channel_meta))
 }
 
 /// Fetch YouTube oEmbed data for a video ID, using the cache if available.
@@ -440,9 +441,8 @@ async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
     .into_response()
 }
 
-/// Resolve a YouTube handle (e.g. "ChrisJamesTV") to the real UC... channel ID
-/// by fetching the channel page and extracting the channel ID from the HTML.
-async fn resolve_channel_id(handle: &str) -> Result<String, String> {
+/// Fetch a YouTube channel page HTML by handle.
+async fn fetch_channel_page(handle: &str) -> Result<String, String> {
     let page_url = format!("https://www.youtube.com/@{}", handle);
     let resp = reqwest::get(&page_url)
         .await
@@ -452,25 +452,123 @@ async fn resolve_channel_id(handle: &str) -> Result<String, String> {
         return Err(format!("Channel page returned {}", resp.status()));
     }
 
-    let html = resp
-        .text()
+    resp.text()
         .await
-        .map_err(|e| format!("Failed to read channel page: {}", e))?;
+        .map_err(|e| format!("Failed to read channel page: {}", e))
+}
 
-    // Look for "externalId":"UC..." or "channelId":"UC..." in the page HTML
+/// Resolve a YouTube handle to the real UC... channel ID from page HTML.
+async fn resolve_channel_id(handle: &str) -> Result<String, String> {
+    let html = fetch_channel_page(handle).await?;
+    extract_channel_id(&html).ok_or_else(|| "Could not find channel ID in page".to_string())
+}
+
+fn extract_channel_id(html: &str) -> Option<String> {
     for pattern in &["\"externalId\":\"", "\"channelId\":\""] {
         if let Some(start) = html.find(pattern) {
             let rest = &html[start + pattern.len()..];
             if let Some(end) = rest.find('"') {
                 let id = &rest[..end];
                 if id.starts_with("UC") {
-                    return Ok(id.to_string());
+                    return Some(id.to_string());
                 }
             }
         }
     }
+    None
+}
 
-    Err("Could not find channel ID in page".to_string())
+// ===== Channel Metadata =====
+
+#[derive(Serialize)]
+struct ChannelMeta {
+    #[serde(rename = "channelId")]
+    channel_id: String,
+    avatar: String,
+    description: String,
+    #[serde(rename = "subscriberText")]
+    subscriber_text: String,
+}
+
+#[derive(Deserialize)]
+struct ChannelMetaQuery {
+    handle: String,
+}
+
+async fn channel_meta(Query(query): Query<ChannelMetaQuery>) -> impl IntoResponse {
+    if query.handle.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Missing handle parameter" })),
+        )
+            .into_response();
+    }
+
+    let html = match fetch_channel_page(&query.handle).await {
+        Ok(h) => h,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e })),
+            )
+                .into_response()
+        }
+    };
+
+    let channel_id = extract_channel_id(&html).unwrap_or_default();
+    let avatar = extract_og_meta(&html, "og:image").unwrap_or_default();
+    let description = extract_og_meta(&html, "og:description").unwrap_or_default();
+    let subscriber_text = extract_json_string(&html, "\"subscriberCountText\"")
+        .unwrap_or_default();
+
+    Json(ChannelMeta {
+        channel_id,
+        avatar,
+        description,
+        subscriber_text,
+    })
+    .into_response()
+}
+
+/// Extract an Open Graph meta tag value from HTML.
+fn extract_og_meta(html: &str, property: &str) -> Option<String> {
+    // Look for <meta property="og:image" content="...">
+    let pattern = format!("property=\"{}\"", property);
+    let pos = html.find(&pattern)?;
+    let region = &html[pos..];
+    // Find content="..." attribute
+    let content_start = region.find("content=\"")? + 9;
+    let rest = &region[content_start..];
+    let end = rest.find('"')?;
+    Some(html_decode(&rest[..end]))
+}
+
+/// Extract a text value from YouTube's JSON-LD / initial data in the page.
+fn extract_json_string(html: &str, key: &str) -> Option<String> {
+    let pos = html.find(key)?;
+    let rest = &html[pos + key.len()..];
+    // Look for "simpleText":"..." or "content":"..."
+    for text_key in &["\"simpleText\":\"", "\"content\":\""] {
+        if let Some(start) = rest.find(text_key) {
+            if start > 200 {
+                continue; // Too far from key, likely wrong match
+            }
+            let val_start = start + text_key.len();
+            let val_rest = &rest[val_start..];
+            if let Some(end) = val_rest.find('"') {
+                return Some(html_decode(&val_rest[..end]));
+            }
+        }
+    }
+    None
+}
+
+fn html_decode(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
 }
 
 fn parse_rss_feed(xml: &str) -> (String, Vec<RssVideo>) {

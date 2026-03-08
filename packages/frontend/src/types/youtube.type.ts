@@ -267,6 +267,15 @@ export interface YouTubeChannelFeedResponse {
 	continuation: string | null;
 }
 
+// ===== Channel Metadata =====
+
+export interface YouTubeChannelMeta {
+	channelId: string;
+	avatar: string;
+	description: string;
+	subscriberText: string;
+}
+
 // ===== Channel RSS Feed =====
 
 export interface YouTubeRssVideo {
