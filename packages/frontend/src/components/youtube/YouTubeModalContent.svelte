@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import { youtubeService } from '$services/youtube.service';
 	import { libraryService } from '$services/library.service';
 	import YouTubeUrlInput from '$components/youtube/YouTubeUrlInput.svelte';
@@ -10,12 +9,11 @@
 
 	const state = youtubeService.state;
 
-	onMount(() => {
+	$effect(() => {
 		Promise.all([youtubeService.initialize(), libraryService.initialize()]);
-	});
-
-	onDestroy(() => {
-		youtubeService.destroy();
+		return () => {
+			youtubeService.destroy();
+		};
 	});
 
 	async function handleDownload() {

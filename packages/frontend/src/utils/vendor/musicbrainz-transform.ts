@@ -28,9 +28,7 @@ export function formatDuration(ms: number | undefined): string | null {
 	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function releaseGroupToDisplay(
-	rg: MusicBrainzReleaseGroup
-): DisplayMusicBrainzReleaseGroup {
+export function releaseGroupToDisplay(rg: MusicBrainzReleaseGroup): DisplayMusicBrainzReleaseGroup {
 	return {
 		id: rg.id,
 		title: rg.title,

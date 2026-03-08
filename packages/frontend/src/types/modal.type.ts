@@ -1,8 +1,4 @@
-export type NavbarModalId =
-	| 'youtube'
-	| 'youtube-search'
-	| 'libraries'
-	| 'settings';
+export type NavbarModalId = 'youtube' | 'youtube-search' | 'libraries' | 'settings' | 'db' | 'yt-channels';
 
 export interface ModalRouterState {
 	navbarModal: NavbarModalId | null;

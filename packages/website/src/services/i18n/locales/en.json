@@ -7,7 +7,7 @@
 	"hero": {
 		"title": "Your media, your rules",
 		"subtitle": "Mhaoltube is an open-source alternative YouTube client that puts you in control. Download videos, build your library, and enjoy your content without compromises.",
-		"cta": "Get Started",
+		"cta": "Download",
 		"source": "View Source"
 	},
 	"features": {
@@ -43,7 +43,9 @@
 		"subheading": "Built with Tauri for native performance on every platform.",
 		"macos": "macOS",
 		"android": "Android",
-		"more": "More platforms coming soon"
+		"windows": "Windows",
+		"linux": "Linux",
+		"download": "Download"
 	},
 	"footer": {
 		"tagline": "Open-source alternative YouTube client",

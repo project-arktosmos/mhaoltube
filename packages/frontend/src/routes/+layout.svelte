@@ -1,8 +1,6 @@
 <script lang="ts">
 	import '../css/app.css';
 	import '$services/i18n';
-	import { onMount, onDestroy } from 'svelte';
-	import { playerService } from '$services/player.service';
 	import { themeService } from '$services/theme.service';
 	import Navbar from '$components/core/Navbar.svelte';
 	import ModalOutlet from '$components/core/ModalOutlet.svelte';
@@ -15,13 +13,6 @@
 		document.documentElement.setAttribute('data-theme', $themeStore.theme);
 	});
 
-	onMount(async () => {
-		await playerService.initialize();
-	});
-
-	onDestroy(() => {
-		playerService.destroy();
-	});
 </script>
 
 <div class="flex min-h-screen flex-col">

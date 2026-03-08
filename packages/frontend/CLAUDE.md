@@ -264,6 +264,20 @@ Components contain **only UI logic**. All business logic belongs in services and
 <input oninput={(e) => (query = e.currentTarget.value)} />
 ```
 
+**Naming conflict: `$state` rune vs store variables:**
+
+Never name a store variable `state` (e.g. `const state = myService.state;`) if the component also uses `$state()` rune calls. Svelte interprets `$state(...)` as a store auto-subscription call on the `state` variable, not the rune. Use a prefixed name instead:
+
+```svelte
+<!-- BAD: conflicts with $state() rune -->
+const state = youtubeService.state;
+let loading = $state(false);  // ERROR: tries to call store value
+
+<!-- GOOD: use a unique name -->
+const ytState = youtubeService.state;
+let loading = $state(false);  // works correctly
+```
+
 **`classnames` usage:**
 
 ```typescript

@@ -11,13 +11,7 @@
 		onedittype: (file: LibraryFile) => void;
 	}
 
-	let {
-		file,
-		onyoutubelink,
-		onyoutubeunlink,
-		onyoutubepreview,
-		onedittype
-	}: Props = $props();
+	let { file, onyoutubelink, onyoutubeunlink, onyoutubepreview, onedittype }: Props = $props();
 
 	let editingYoutube = $state(false);
 	let youtubeInput = $state('');

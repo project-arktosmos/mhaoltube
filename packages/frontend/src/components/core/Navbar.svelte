@@ -41,6 +41,18 @@
 			>
 				Settings
 			</button>
+			<button
+				class="btn btn-ghost btn-sm"
+				onclick={() => modalRouterService.openNavbar('db')}
+			>
+				DB
+			</button>
+			<button
+				class="btn btn-ghost btn-sm"
+				onclick={() => modalRouterService.openNavbar('yt-channels')}
+			>
+				YT Channels
+			</button>
 			<ThemeToggle />
 		</div>
 
@@ -76,6 +88,8 @@
 					<button onclick={() => modalRouterService.openNavbar('libraries')}>Libraries</button>
 				</li>
 				<li><button onclick={() => modalRouterService.openNavbar('settings')}>Settings</button></li>
+				<li><button onclick={() => modalRouterService.openNavbar('db')}>DB</button></li>
+				<li><button onclick={() => modalRouterService.openNavbar('yt-channels')}>YT Channels</button></li>
 				<li><ThemeToggle /></li>
 			</ul>
 		</div>

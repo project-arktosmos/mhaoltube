@@ -3,8 +3,6 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { apiUrl } from '$lib/api-base';
-	import { playerService } from '$services/player.service';
-	import { playerAdapter } from '$adapters/classes/player.adapter';
 	import { mediaDetailService } from '$services/media-detail.service';
 	import { libraryService } from '$services/library.service';
 	import { modalRouterService } from '$services/modal-router.service';
@@ -15,7 +13,6 @@
 	import MediaListCard from '$components/media/MediaListCard.svelte';
 	import MediaDetail from '$components/media/MediaDetail.svelte';
 	import type { MediaList, MediaListLink } from '$types/media-list.type';
-	import PlayerVideo from '$components/player/PlayerVideo.svelte';
 	import type { LibraryFile } from '$types/library.type';
 	import type {
 		MediaItem,
@@ -139,9 +136,6 @@
 		})
 	);
 
-	// Player state
-	const playerState = playerService.state;
-
 	// Media detail selection
 	const mediaDetailStore = mediaDetailService.store;
 	let selectedItemId = $derived($mediaDetailStore?.item.id ?? null);
@@ -151,6 +145,11 @@
 		if (item.mediaTypeId === 'audio') return 'audio';
 		if (item.mediaTypeId === 'image') return 'image';
 		return 'video';
+	}
+
+	function handlePlay(item: MediaItem) {
+		const streamUrl = apiUrl(`/api/libraries/${item.libraryId}/items/${item.id}/stream`);
+		window.open(streamUrl, '_blank');
 	}
 
 	function handleSelect(item: MediaItem) {
@@ -176,10 +175,7 @@
 		const updatedItem = itemsWithOverrides.find((i) => i.id === id);
 		if (!updatedItem) return;
 		const newYt = youtubeMetadata[id] ?? null;
-		if (
-			newYt !== sel.youtubeMetadata ||
-			updatedItem !== sel.item
-		) {
+		if (newYt !== sel.youtubeMetadata || updatedItem !== sel.item) {
 			mediaDetailService.select({
 				...sel,
 				item: updatedItem,
@@ -190,7 +186,6 @@
 	});
 
 	function closeMediaDetail() {
-		playerService.stop();
 		mediaDetailService.clear();
 		modalRouterService.closeMediaDetail();
 	}
@@ -281,11 +276,6 @@
 				youtubeMetadata = rest;
 			}
 		}
-	}
-
-	function handlePlay(item: MediaItem) {
-		const playableFile = playerAdapter.fromMediaItem(item);
-		playerService.play(playableFile);
 	}
 
 	function itemAsLibraryFile(item: MediaItem): LibraryFile {
@@ -483,31 +473,6 @@
 <Modal open={!!$mediaDetailStore} maxWidth="max-w-lg" onclose={closeMediaDetail}>
 	{#if $mediaDetailStore}
 		<MediaDetail selection={$mediaDetailStore} onclose={closeMediaDetail} />
-		{#if $playerState.currentFile && $playerState.currentFile.id !== $mediaDetailStore?.item.id}
-			<div class="mt-4 border-t border-base-300 pt-4">
-				<div class="mb-2 flex items-center justify-between">
-					<h2 class="text-sm font-semibold tracking-wide text-base-content/50 uppercase">
-						Now Playing
-					</h2>
-					<button
-						class="btn btn-square btn-ghost btn-xs"
-						onclick={() => playerService.stop()}
-						aria-label="Close player"
-					>
-						&times;
-					</button>
-				</div>
-				<p class="mb-2 truncate text-xs opacity-60" title={$playerState.currentFile.name}>
-					{$playerState.currentFile.name}
-				</p>
-				<PlayerVideo
-					file={$playerState.currentFile}
-					connectionState={$playerState.connectionState}
-					positionSecs={$playerState.positionSecs}
-					durationSecs={$playerState.durationSecs}
-				/>
-			</div>
-		{/if}
 	{/if}
 </Modal>
 

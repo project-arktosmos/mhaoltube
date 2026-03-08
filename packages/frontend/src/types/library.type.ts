@@ -3,13 +3,15 @@ import type { ID } from '$types/core.type';
 export enum MediaType {
 	Video = 'video',
 	Image = 'image',
-	Audio = 'audio'
+	Audio = 'audio',
+	Other = 'other'
 }
 
 export const MEDIA_TYPE_OPTIONS: { value: MediaType; label: string }[] = [
 	{ value: MediaType.Video, label: 'Video' },
 	{ value: MediaType.Image, label: 'Image' },
-	{ value: MediaType.Audio, label: 'Audio' }
+	{ value: MediaType.Audio, label: 'Audio' },
+	{ value: MediaType.Other, label: 'Other' }
 ];
 
 export interface MediaTypeOption {

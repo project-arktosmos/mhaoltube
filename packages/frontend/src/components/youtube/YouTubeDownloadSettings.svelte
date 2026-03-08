@@ -18,53 +18,57 @@
 		VideoFormat
 	} from '$types/youtube.type';
 
-	const state = youtubeService.state;
+	const ytState = youtubeService.state;
 	const settings = youtubeService.store;
 	const libraries = libraryService.store;
-	const libraryState = libraryService.state;
+	const libState = libraryService.state;
 
-	// Advanced config state
-	let showAdvanced = false;
-	let poToken = '';
-	let cookies = '';
-	let configSaving = false;
+	let showAdvanced = $state(false);
+	let poToken = $state('');
+	let cookies = $state('');
+	let configSaving = $state(false);
 
-	// Library selection
-	let selectedLibraryId: string = '';
-	let showInlineAddForm = false;
-	let previousLibraryCount = 0;
+	let selectedLibraryId = $state('');
+	let showInlineAddForm = $state(false);
+	let libraryCountOnOpen = 0;
 
 	// Sync auth fields from settings store
-	$: if ($settings.poToken !== undefined) poToken = $settings.poToken;
-	$: if ($settings.cookies !== undefined) cookies = $settings.cookies;
+	$effect(() => {
+		if ($settings.poToken !== undefined) poToken = $settings.poToken;
+	});
+
+	$effect(() => {
+		if ($settings.cookies !== undefined) cookies = $settings.cookies;
+	});
 
 	// Auto-select library matching current libraryId, or first library if none matches
-	$: if ($libraries.length > 0) {
-		if ($settings.libraryId) {
-			const match = $libraries.find((lib: Library) => String(lib.id) === $settings.libraryId);
-			if (match) {
-				selectedLibraryId = String(match.id);
+	$effect(() => {
+		if ($libraries.length > 0) {
+			if ($settings.libraryId) {
+				const match = $libraries.find((lib: Library) => String(lib.id) === $settings.libraryId);
+				if (match) {
+					selectedLibraryId = String(match.id);
+				}
+			}
+			if (!selectedLibraryId) {
+				const first = $libraries[0];
+				selectedLibraryId = String(first.id);
+				youtubeService.setLibrary(String(first.id));
 			}
 		}
-		if (!selectedLibraryId) {
-			const first = $libraries[0];
-			selectedLibraryId = String(first.id);
-			youtubeService.setLibrary(String(first.id));
-		}
-	}
+	});
 
 	// Detect when inline add form closes (cancel or successful add)
-	$: if (showInlineAddForm && !$libraryState.showAddForm) {
-		showInlineAddForm = false;
-		// If a new library was added, auto-select it
-		if ($libraries.length > previousLibraryCount) {
-			const newest = $libraries[$libraries.length - 1];
-			selectedLibraryId = String(newest.id);
-			youtubeService.setLibrary(String(newest.id));
+	$effect(() => {
+		if (showInlineAddForm && !$libState.showAddForm) {
+			showInlineAddForm = false;
+			if ($libraries.length > libraryCountOnOpen) {
+				const newest = $libraries[$libraries.length - 1];
+				selectedLibraryId = String(newest.id);
+				youtubeService.setLibrary(String(newest.id));
+			}
 		}
-	}
-
-	$: previousLibraryCount = $libraries.length;
+	});
 
 	function handleModeChange(mode: DownloadMode) {
 		youtubeService.setDownloadMode(mode);
@@ -103,6 +107,7 @@
 	}
 
 	function handleShowAddForm() {
+		libraryCountOnOpen = $libraries.length;
 		showInlineAddForm = true;
 		libraryService.openAddForm();
 	}
@@ -116,9 +121,8 @@
 		configSaving = false;
 	}
 
-	// Reactive downloader status
-	$: downloaderStatus = $state.downloaderStatus;
-	$: downloaderAvailable = downloaderStatus?.available ?? false;
+	let downloaderStatus = $derived($ytState.downloaderStatus);
+	let downloaderAvailable = $derived(downloaderStatus?.available ?? false);
 </script>
 
 <div class="card bg-base-200">
@@ -172,7 +176,7 @@
 						'btn-primary': $settings.downloadMode === 'audio',
 						'btn-ghost': $settings.downloadMode !== 'audio'
 					})}
-					on:click={() => handleModeChange('audio')}
+					onclick={() => handleModeChange('audio')}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -195,7 +199,7 @@
 						'btn-primary': $settings.downloadMode === 'video',
 						'btn-ghost': $settings.downloadMode !== 'video'
 					})}
-					on:click={() => handleModeChange('video')}
+					onclick={() => handleModeChange('video')}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -226,7 +230,7 @@
 					id="quality-select"
 					class="select-bordered select w-full"
 					value={$settings.defaultQuality}
-					on:change={handleQualityChange}
+					onchange={handleQualityChange}
 				>
 					{#each AUDIO_QUALITY_OPTIONS as option}
 						<option value={option.value}>
@@ -245,7 +249,7 @@
 					id="format-select"
 					class="select-bordered select w-full"
 					value={$settings.defaultFormat}
-					on:change={handleFormatChange}
+					onchange={handleFormatChange}
 				>
 					{#each AUDIO_FORMAT_OPTIONS as option}
 						<option value={option.value}>
@@ -264,7 +268,7 @@
 					id="video-quality-select"
 					class="select-bordered select w-full"
 					value={$settings.defaultVideoQuality}
-					on:change={handleVideoQualityChange}
+					onchange={handleVideoQualityChange}
 				>
 					{#each VIDEO_QUALITY_OPTIONS as option}
 						<option value={option.value}>
@@ -283,7 +287,7 @@
 					id="video-format-select"
 					class="select-bordered select w-full"
 					value={$settings.defaultVideoFormat}
-					on:change={handleVideoFormatChange}
+					onchange={handleVideoFormatChange}
 				>
 					{#each VIDEO_FORMAT_OPTIONS as option}
 						<option value={option.value}>
@@ -306,7 +310,7 @@
 						id="library-select"
 						class="select-bordered select flex-1"
 						value={selectedLibraryId}
-						on:change={handleLibrarySelect}
+						onchange={handleLibrarySelect}
 					>
 						<option value="" disabled>Select a library...</option>
 						{#each $libraries as library (library.id)}
@@ -315,7 +319,7 @@
 							</option>
 						{/each}
 					</select>
-					<button class="btn btn-ghost btn-sm" on:click={handleShowAddForm} title="Add new library">
+					<button class="btn btn-ghost btn-sm" onclick={handleShowAddForm} title="Add new library">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							class="h-4 w-4"
@@ -331,7 +335,7 @@
 			{:else}
 				<div class="rounded-lg bg-base-300 p-4 text-center">
 					<p class="mb-2 text-sm text-base-content/60">No libraries configured</p>
-					<button class="btn btn-sm btn-primary" on:click={handleShowAddForm}>
+					<button class="btn btn-sm btn-primary" onclick={handleShowAddForm}>
 						Create Library
 					</button>
 				</div>
@@ -339,17 +343,17 @@
 		</div>
 
 		<!-- Inline Library Add Form -->
-		{#if showInlineAddForm && $libraryState.showAddForm}
+		{#if showInlineAddForm && $libState.showAddForm}
 			<LibraryAddForm />
 		{/if}
 
 		<!-- Stats -->
-		{#if $state.stats}
+		{#if $ytState.stats}
 			<div class="divider my-1"></div>
 			<div class="flex justify-between text-sm text-base-content/60">
-				<span>Active: {$state.stats.activeDownloads}</span>
-				<span>Completed: {$state.stats.completedDownloads}</span>
-				<span>Failed: {$state.stats.failedDownloads}</span>
+				<span>Active: {$ytState.stats.activeDownloads}</span>
+				<span>Completed: {$ytState.stats.completedDownloads}</span>
+				<span>Failed: {$ytState.stats.failedDownloads}</span>
 			</div>
 		{/if}
 
@@ -357,7 +361,7 @@
 		<div class="divider my-1"></div>
 		<button
 			class="flex w-full items-center justify-between text-sm text-base-content/70 hover:text-base-content"
-			on:click={() => (showAdvanced = !showAdvanced)}
+			onclick={() => (showAdvanced = !showAdvanced)}
 		>
 			<span>Advanced (Auth Config)</span>
 			<svg
@@ -407,7 +411,7 @@
 				</div>
 
 				<!-- Save Button -->
-				<button class="btn btn-sm btn-primary" on:click={handleSaveConfig} disabled={configSaving}>
+				<button class="btn btn-sm btn-primary" onclick={handleSaveConfig} disabled={configSaving}>
 					{#if configSaving}
 						<span class="loading loading-xs loading-spinner"></span>
 					{/if}

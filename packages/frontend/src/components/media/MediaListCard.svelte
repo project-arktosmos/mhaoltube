@@ -10,11 +10,7 @@
 		onselect?: (list: MediaList) => void;
 	}
 
-	let {
-		list,
-		selected = false,
-		onselect
-	}: Props = $props();
+	let { list, selected = false, onselect }: Props = $props();
 
 	let kindLabel = $derived(list.mediaType === 'video' ? 'TV Show' : 'Album');
 

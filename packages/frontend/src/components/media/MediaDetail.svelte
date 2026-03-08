@@ -2,8 +2,6 @@
 	import classNames from 'classnames';
 	import { libraryFileAdapter } from '$adapters/classes/library-file.adapter';
 	import { getThumbnailUrl } from '$utils/youtube';
-	import PlayerVideo from '$components/player/PlayerVideo.svelte';
-	import { playerService } from '$services/player.service';
 	import type { MediaDetailSelection } from '$types/media-detail.type';
 	import type { MediaType } from '$types/library.type';
 
@@ -29,8 +27,7 @@
 		return item.name;
 	});
 
-	const playerState = playerService.state;
-	let isPlaying = $derived($playerState.currentFile?.id === selection.item.id);
+	let isPlayable = $derived(selection.cardType !== 'image');
 </script>
 
 <div class="flex flex-col gap-3">
@@ -46,14 +43,7 @@
 	</div>
 
 	<figure class="relative overflow-hidden rounded-lg bg-base-300">
-		{#if isPlaying && $playerState.currentFile}
-			<PlayerVideo
-				file={$playerState.currentFile}
-				connectionState={$playerState.connectionState}
-				positionSecs={$playerState.positionSecs}
-				durationSecs={$playerState.durationSecs}
-			/>
-		{:else if imageUrl}
+		{#if imageUrl}
 			<img src={imageUrl} alt={imageAlt} class="w-full object-cover" />
 		{:else}
 			<div class="flex h-40 w-full items-center justify-center text-base-content/20">
@@ -109,14 +99,21 @@
 	{/if}
 
 	<div class="flex flex-wrap gap-2">
-		{#if selection.cardType === 'youtube' || selection.cardType === 'video'}
-			{#if isPlaying}
-				<button class="btn btn-ghost btn-sm" onclick={() => playerService.stop()}>Stop</button>
-			{:else}
-				<button class="btn btn-sm btn-accent" onclick={() => selection.onplay?.(selection.item)}
-					>Play</button
+		{#if isPlayable}
+			<button
+				class="btn btn-sm btn-primary"
+				onclick={() => selection.onplay?.(selection.item)}
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					class="h-4 w-4"
+					viewBox="0 0 24 24"
+					fill="currentColor"
 				>
-			{/if}
+					<path d="M8 5v14l11-7z" />
+				</svg>
+				Play
+			</button>
 		{/if}
 		{#if selection.cardType === 'video'}
 			<button
