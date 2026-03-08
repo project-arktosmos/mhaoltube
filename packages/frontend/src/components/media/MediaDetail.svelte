@@ -100,10 +100,7 @@
 
 	<div class="flex flex-wrap gap-2">
 		{#if isPlayable}
-			<button
-				class="btn btn-sm btn-primary"
-				onclick={() => selection.onplay?.(selection.item)}
-			>
+			<button class="btn btn-sm btn-primary" onclick={() => selection.onplay?.(selection.item)}>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					class="h-4 w-4"

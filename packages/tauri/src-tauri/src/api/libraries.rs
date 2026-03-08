@@ -1,9 +1,9 @@
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -11,29 +11,27 @@ use std::collections::{HashMap, HashSet};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/", get(list_libraries).post(create_library))
-        .route("/{id}", delete(delete_library))
-        .route("/{id}/items/{item_id}/category", post(update_item_category).delete(clear_item_category))
+        .route("/", get(get_default_library))
+        .route("/items/{item_id}/category", post(update_item_category).delete(clear_item_category))
         .route(
-            "/{id}/items/{item_id}/media-type",
+            "/items/{item_id}/media-type",
             put(update_item_media_type),
         )
         .route(
-            "/{id}/items/{item_id}/tmdb",
+            "/items/{item_id}/tmdb",
             put(link_tmdb).delete(unlink_tmdb),
         )
         .route(
-            "/{id}/items/{item_id}/youtube",
+            "/items/{item_id}/youtube",
             put(link_youtube).delete(unlink_youtube),
         )
         .route(
-            "/{id}/items/{item_id}/musicbrainz",
+            "/items/{item_id}/musicbrainz",
             put(link_musicbrainz).delete(unlink_musicbrainz),
         )
-        .route("/{id}/items/{item_id}/stream", get(stream_item))
-        .route("/{id}/files", get(get_library_files))
-        .route("/{id}/scan", get(scan_library).post(scan_library))
-        .route("/browse", get(browse_directory))
+        .route("/items/{item_id}/stream", get(stream_item))
+        .route("/files", get(get_library_files))
+        .route("/scan", get(scan_library).post(scan_library))
         .route("/media-types", get(get_media_types))
         .route("/categories", get(get_categories))
 }
@@ -90,24 +88,9 @@ struct MappedFile {
 
 #[derive(Serialize)]
 struct LibraryFilesResponse {
-    #[serde(rename = "libraryId")]
-    library_id: String,
     #[serde(rename = "libraryPath")]
     library_path: String,
     files: Vec<MappedFile>,
-}
-
-#[derive(Serialize)]
-struct DirectoryEntry {
-    name: String,
-    path: String,
-}
-
-#[derive(Serialize)]
-struct BrowseResponse {
-    path: String,
-    parent: Option<String>,
-    directories: Vec<DirectoryEntry>,
 }
 
 // --- Helper to map library items with their links ---
@@ -149,53 +132,11 @@ fn map_library_files(state: &AppState, library_id: &str) -> Vec<MappedFile> {
 
 // --- Route handlers ---
 
-async fn list_libraries(State(state): State<AppState>) -> impl IntoResponse {
-    let libraries: Vec<MappedLibrary> = state
-        .libraries
-        .get_all()
-        .into_iter()
-        .map(MappedLibrary::from_row)
-        .collect();
-    Json(libraries)
-}
-
-#[derive(Deserialize)]
-struct CreateLibraryBody {
-    name: String,
-    path: String,
-    #[serde(alias = "media_types", alias = "mediaTypes")]
-    media_types: Vec<String>,
-}
-
-async fn create_library(
-    State(state): State<AppState>,
-    Json(body): Json<CreateLibraryBody>,
-) -> impl IntoResponse {
-    let id = uuid::Uuid::new_v4().to_string();
-    let media_types_json = serde_json::to_string(&body.media_types).unwrap_or_else(|_| "[]".into());
-    let date_added = chrono::Utc::now().timestamp_millis();
-    state
-        .libraries
-        .insert(&id, &body.name, &body.path, &media_types_json, date_added);
-    (
-        StatusCode::CREATED,
-        Json(MappedLibrary {
-            id,
-            name: body.name,
-            path: body.path,
-            media_types: body.media_types,
-            date_added,
-        }),
-    )
-}
-
-async fn delete_library(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    state.library_items.delete_by_library(&id);
-    state.libraries.delete(&id);
-    StatusCode::NO_CONTENT
+async fn get_default_library(State(state): State<AppState>) -> impl IntoResponse {
+    match state.libraries.get(crate::AppState::DEFAULT_LIBRARY_ID) {
+        Some(row) => Json(MappedLibrary::from_row(row)).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -206,7 +147,7 @@ struct UpdateCategoryBody {
 
 async fn update_item_category(
     State(state): State<AppState>,
-    Path((_lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
     Json(body): Json<UpdateCategoryBody>,
 ) -> impl IntoResponse {
     state
@@ -217,7 +158,7 @@ async fn update_item_category(
 
 async fn clear_item_category(
     State(state): State<AppState>,
-    Path((_lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
 ) -> impl IntoResponse {
     state.library_items.clear_category(&item_id);
     StatusCode::OK
@@ -231,7 +172,7 @@ struct UpdateMediaTypeBody {
 
 async fn update_item_media_type(
     State(state): State<AppState>,
-    Path((_lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
     Json(body): Json<UpdateMediaTypeBody>,
 ) -> impl IntoResponse {
     state
@@ -240,17 +181,15 @@ async fn update_item_media_type(
     StatusCode::OK
 }
 
-/// GET /api/libraries/{id}/items/{item_id}/stream — stream a media file
+/// GET /api/libraries/items/{item_id}/stream — stream a media file
 async fn stream_item(
     State(state): State<AppState>,
-    Path((id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
 ) -> impl IntoResponse {
-    if state.libraries.get(&id).is_none() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
+    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
 
     let item = match state.library_items.get(&item_id) {
-        Some(item) if item.library_id == id => item,
+        Some(item) if item.library_id == lib_id => item,
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
 
@@ -279,12 +218,12 @@ async fn stream_item(
     ([(header::CONTENT_TYPE, content_type)], bytes).into_response()
 }
 
-/// GET /api/libraries/{id}/files — returns files with links in frontend format
+/// GET /api/libraries/files — returns files with links in frontend format
 async fn get_library_files(
     State(state): State<AppState>,
-    Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let library = match state.libraries.get(&id) {
+    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
+    let library = match state.libraries.get(lib_id) {
         Some(lib) => lib,
         None => {
             return (
@@ -295,21 +234,20 @@ async fn get_library_files(
         }
     };
 
-    let files = map_library_files(&state, &id);
+    let files = map_library_files(&state, lib_id);
     Json(LibraryFilesResponse {
-        library_id: id,
         library_path: library.path,
         files,
     })
     .into_response()
 }
 
-/// POST/GET /api/libraries/{id}/scan — scan directory and return updated files
+/// POST/GET /api/libraries/scan — scan directory and return updated files
 async fn scan_library(
     State(state): State<AppState>,
-    Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let library = match state.libraries.get(&id) {
+    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
+    let library = match state.libraries.get(lib_id) {
         Some(lib) => lib,
         None => {
             return (
@@ -327,16 +265,16 @@ async fn scan_library(
 
     if !ext_map.is_empty() || include_other {
         let mut scanned_files = Vec::new();
-        scan_dir(&library.path, &id, &ext_map, include_other, &mut scanned_files);
-        state.library_items.sync_library(&id, &scanned_files);
+        scan_dir(&library.path, lib_id, &ext_map, include_other, &mut scanned_files);
+        state.library_items.sync_library(lib_id, &scanned_files);
     }
 
-    generate_auto_lists(&state, &id);
+    generate_auto_lists(&state, lib_id);
 
     // Spawn background task to pre-fetch YouTube oEmbed metadata
     {
         let db = state.db.clone();
-        let items = state.library_items.get_by_library(&id);
+        let items = state.library_items.get_by_library(lib_id);
         let links_repo = state.library_item_links.clone();
         tokio::spawn(async move {
             let mut video_ids: Vec<String> = Vec::new();
@@ -361,60 +299,12 @@ async fn scan_library(
         });
     }
 
-    let files = map_library_files(&state, &id);
+    let files = map_library_files(&state, lib_id);
     Json(LibraryFilesResponse {
-        library_id: id,
         library_path: library.path,
         files,
     })
     .into_response()
-}
-
-#[derive(Deserialize)]
-struct BrowseQuery {
-    path: Option<String>,
-}
-
-/// GET /api/libraries/browse — browse directories in BrowseDirectoryResponse format
-async fn browse_directory(Query(query): Query<BrowseQuery>) -> impl IntoResponse {
-    let path = query.path.unwrap_or_else(|| "/".to_string());
-    let entries = match std::fs::read_dir(&path) {
-        Ok(e) => e,
-        Err(_) => {
-            return Json(BrowseResponse {
-                path: path.clone(),
-                parent: std::path::Path::new(&path)
-                    .parent()
-                    .map(|p| p.to_string_lossy().to_string()),
-                directories: Vec::new(),
-            });
-        }
-    };
-
-    let mut dirs = Vec::new();
-    for entry in entries.flatten() {
-        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-            if let Some(name) = entry.file_name().to_str() {
-                if !name.starts_with('.') {
-                    dirs.push(DirectoryEntry {
-                        name: name.to_string(),
-                        path: entry.path().to_string_lossy().to_string(),
-                    });
-                }
-            }
-        }
-    }
-    dirs.sort_by(|a, b| a.name.cmp(&b.name));
-
-    let parent = std::path::Path::new(&path)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string());
-
-    Json(BrowseResponse {
-        path,
-        parent,
-        directories: dirs,
-    })
 }
 
 async fn get_media_types(State(state): State<AppState>) -> impl IntoResponse {
@@ -427,9 +317,9 @@ async fn get_categories(State(state): State<AppState>) -> impl IntoResponse {
 
 // --- Library item link handlers ---
 
-fn validate_item(state: &AppState, lib_id: &str, item_id: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+fn validate_item(state: &AppState, item_id: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
     match state.library_items.get(item_id) {
-        Some(item) if item.library_id == lib_id => Ok(()),
+        Some(item) if item.library_id == crate::AppState::DEFAULT_LIBRARY_ID => Ok(()),
         _ => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Library item not found" })))),
     }
 }
@@ -446,10 +336,10 @@ struct LinkTmdbBody {
 
 async fn link_tmdb(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
     Json(body): Json<LinkTmdbBody>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     state.library_item_links.upsert(
         &uuid::Uuid::new_v4().to_string(), &item_id, "tmdb",
         &body.tmdb_id.to_string(), body.season_number, body.episode_number,
@@ -459,9 +349,9 @@ async fn link_tmdb(
 
 async fn unlink_tmdb(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     state.library_item_links.delete(&item_id, "tmdb");
     Json(serde_json::json!({ "ok": true })).into_response()
 }
@@ -474,10 +364,10 @@ struct LinkYoutubeBody {
 
 async fn link_youtube(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
     Json(body): Json<LinkYoutubeBody>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     let yt_id = body.youtube_id.trim();
     if yt_id.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "youtubeId must be a non-empty string" }))).into_response();
@@ -490,9 +380,9 @@ async fn link_youtube(
 
 async fn unlink_youtube(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     state.library_item_links.delete(&item_id, "youtube");
     Json(serde_json::json!({ "ok": true })).into_response()
 }
@@ -505,10 +395,10 @@ struct LinkMusicbrainzBody {
 
 async fn link_musicbrainz(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
     Json(body): Json<LinkMusicbrainzBody>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     let mb_id = body.musicbrainz_id.trim();
     if mb_id.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "musicbrainzId must be a non-empty string" }))).into_response();
@@ -521,9 +411,9 @@ async fn link_musicbrainz(
 
 async fn unlink_musicbrainz(
     State(state): State<AppState>,
-    Path((lib_id, item_id)): Path<(String, String)>,
+    Path(item_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &lib_id, &item_id) { return e.into_response(); }
+    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
     state.library_item_links.delete(&item_id, "musicbrainz");
     Json(serde_json::json!({ "ok": true })).into_response()
 }

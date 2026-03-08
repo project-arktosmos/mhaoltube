@@ -270,12 +270,10 @@ Never name a store variable `state` (e.g. `const state = myService.state;`) if t
 
 ```svelte
 <!-- BAD: conflicts with $state() rune -->
-const state = youtubeService.state;
-let loading = $state(false);  // ERROR: tries to call store value
+const state = youtubeService.state; let loading = $state(false); // ERROR: tries to call store value
 
 <!-- GOOD: use a unique name -->
-const ytState = youtubeService.state;
-let loading = $state(false);  // works correctly
+const ytState = youtubeService.state; let loading = $state(false); // works correctly
 ```
 
 **`classnames` usage:**

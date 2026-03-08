@@ -11,7 +11,10 @@
 		handle: string;
 		name: string;
 		url: string;
+		subscriber_text: string | null;
+		image_url: string | null;
 		created_at: string;
+		updated_at: string;
 	}
 
 	interface TableDetailResponse {
@@ -60,7 +63,25 @@
 	}
 
 	async function fetchAllChannelMeta(rows: YouTubeChannel[]) {
+		// Populate from DB-cached fields first for instant display
+		const initial: Record<string, YouTubeChannelMeta> = {};
+		const needsFetch: YouTubeChannel[] = [];
 		for (const channel of rows) {
+			if (channel.image_url && channel.subscriber_text) {
+				initial[channel.handle] = {
+					channelId: channel.id,
+					avatar: channel.image_url,
+					description: '',
+					subscriberText: channel.subscriber_text
+				};
+			} else {
+				needsFetch.push(channel);
+			}
+		}
+		channelMeta = { ...channelMeta, ...initial };
+
+		// Fetch remaining from YouTube (backend will cache for next time)
+		for (const channel of needsFetch) {
 			if (channelMeta[channel.handle]) continue;
 			try {
 				const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${channel.handle}`));
@@ -196,13 +217,15 @@
 		<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
 			{#each channels as channel (channel.id)}
 				{@const meta = channelMeta[channel.handle]}
+				{@const avatar = channel.image_url || meta?.avatar}
+				{@const subscriberText = channel.subscriber_text || meta?.subscriberText}
 				<button
 					onclick={() => fetchChannelRss(channel)}
 					class="flex items-center gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
 				>
-					{#if meta?.avatar}
+					{#if avatar}
 						<img
-							src={apiUrl(`/api/youtube/image-proxy?url=${encodeURIComponent(meta.avatar)}`)}
+							src={apiUrl(`/api/youtube/image-proxy?url=${encodeURIComponent(avatar)}`)}
 							alt={channel.name}
 							class="h-10 w-10 shrink-0 rounded-full object-cover"
 							loading="lazy"
@@ -226,7 +249,7 @@
 					<div class="min-w-0 flex-1">
 						<p class="truncate font-medium">{channel.name}</p>
 						<p class="truncate text-sm opacity-50">
-							@{channel.handle}{meta?.subscriberText ? ` · ${meta.subscriberText}` : ''}
+							@{channel.handle}{subscriberText ? ` · ${subscriberText}` : ''}
 						</p>
 					</div>
 				</button>

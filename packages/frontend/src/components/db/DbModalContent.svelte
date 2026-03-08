@@ -148,11 +148,13 @@
 					<span class="loading loading-md loading-spinner"></span>
 				</div>
 			{:else}
-				<table class="table-zebra table-xs table w-full">
+				<table class="table w-full table-zebra table-xs">
 					<thead>
 						<tr>
 							{#each tableData.columns as col}
-								<th class="whitespace-nowrap">{col.name}<span class="ml-1 text-xs opacity-40">{col.type}</span></th>
+								<th class="whitespace-nowrap"
+									>{col.name}<span class="ml-1 text-xs opacity-40">{col.type}</span></th
+								>
 							{/each}
 						</tr>
 					</thead>
@@ -167,9 +169,7 @@
 							</tr>
 						{:else}
 							<tr>
-								<td colspan={tableData.columns.length} class="text-center opacity-50">
-									No rows
-								</td>
+								<td colspan={tableData.columns.length} class="text-center opacity-50"> No rows </td>
 							</tr>
 						{/each}
 					</tbody>
@@ -181,7 +181,7 @@
 		{#if tableData.pagination.totalPages > 1}
 			<div class="mt-3 flex items-center justify-center gap-2">
 				<button
-					class="btn btn-xs btn-ghost"
+					class="btn btn-ghost btn-xs"
 					disabled={tableData.pagination.page <= 1}
 					onclick={() => goToPage(tableData!.pagination.page - 1)}
 				>
@@ -192,7 +192,7 @@
 					<span class="opacity-50">({tableData.pagination.total} rows)</span>
 				</span>
 				<button
-					class="btn btn-xs btn-ghost"
+					class="btn btn-ghost btn-xs"
 					disabled={tableData.pagination.page >= tableData.pagination.totalPages}
 					onclick={() => goToPage(tableData!.pagination.page + 1)}
 				>
@@ -206,7 +206,7 @@
 	<div class="card mt-6 bg-base-200">
 		<div class="card-body p-4">
 			{#if resetError}
-				<div class="mb-2 alert alert-error alert-sm">
+				<div class="alert-sm mb-2 alert alert-error">
 					<span>{resetError}</span>
 					<button class="btn btn-ghost btn-xs" onclick={() => (resetError = null)}>x</button>
 				</div>

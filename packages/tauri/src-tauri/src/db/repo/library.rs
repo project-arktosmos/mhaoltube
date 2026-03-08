@@ -43,27 +43,6 @@ impl LibraryRepo {
         .ok()
     }
 
-    pub fn get_all(&self) -> Vec<LibraryRow> {
-        let conn = self.db.lock();
-        let mut stmt = conn
-            .prepare("SELECT id, name, path, media_types, date_added, created_at, updated_at FROM libraries ORDER BY date_added DESC")
-            .unwrap();
-        stmt.query_map([], |row| {
-            Ok(LibraryRow {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                media_types: row.get(3)?,
-                date_added: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect()
-    }
-
     pub fn insert(&self, id: &str, name: &str, path: &str, media_types: &str, date_added: i64) {
         let conn = self.db.lock();
         conn.execute(
@@ -71,21 +50,6 @@ impl LibraryRepo {
             params![id, name, path, media_types, date_added],
         )
         .unwrap();
-    }
-
-    pub fn update(&self, id: &str, name: &str, path: &str, media_types: &str) {
-        let conn = self.db.lock();
-        conn.execute(
-            "UPDATE libraries SET name = ?2, path = ?3, media_types = ?4 WHERE id = ?1",
-            params![id, name, path, media_types],
-        )
-        .unwrap();
-    }
-
-    pub fn delete(&self, id: &str) {
-        let conn = self.db.lock();
-        conn.execute("DELETE FROM libraries WHERE id = ?1", params![id])
-            .unwrap();
     }
 }
 
@@ -95,22 +59,14 @@ mod tests {
     use crate::db::open_test_database;
 
     #[test]
-    fn test_library_crud() {
+    fn test_library_insert_and_get() {
         let db = open_test_database();
         let repo = LibraryRepo::new(db);
 
-        repo.insert("lib1", "Downloads", "/tmp/downloads", "[\"video\"]", 1000);
-        let lib = repo.get("lib1").unwrap();
-        assert_eq!(lib.name, "Downloads");
-        assert_eq!(lib.path, "/tmp/downloads");
-
-        repo.update("lib1", "Media", "/tmp/media", "[\"video\",\"audio\"]");
-        let lib = repo.get("lib1").unwrap();
-        assert_eq!(lib.name, "Media");
-
-        assert_eq!(repo.get_all().len(), 1);
-
-        repo.delete("lib1");
-        assert!(repo.get("lib1").is_none());
+        repo.insert("default", "Library", "/tmp/mhaoltube", "[\"video\",\"image\",\"audio\",\"other\"]", 1000);
+        let lib = repo.get("default").unwrap();
+        assert_eq!(lib.name, "Library");
+        assert_eq!(lib.path, "/tmp/mhaoltube");
+        assert_eq!(lib.media_types, "[\"video\",\"image\",\"audio\",\"other\"]");
     }
 }

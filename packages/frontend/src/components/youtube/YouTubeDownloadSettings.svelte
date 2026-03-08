@@ -2,8 +2,6 @@
 	import classNames from 'classnames';
 	import { youtubeService } from '$services/youtube.service';
 	import { libraryService } from '$services/library.service';
-	import type { Library } from '$types/library.type';
-	import LibraryAddForm from '$components/libraries/LibraryAddForm.svelte';
 	import {
 		AUDIO_QUALITY_OPTIONS,
 		AUDIO_FORMAT_OPTIONS,
@@ -20,17 +18,12 @@
 
 	const ytState = youtubeService.state;
 	const settings = youtubeService.store;
-	const libraries = libraryService.store;
-	const libState = libraryService.state;
+	const library = libraryService.library;
 
 	let showAdvanced = $state(false);
 	let poToken = $state('');
 	let cookies = $state('');
 	let configSaving = $state(false);
-
-	let selectedLibraryId = $state('');
-	let showInlineAddForm = $state(false);
-	let libraryCountOnOpen = 0;
 
 	// Sync auth fields from settings store
 	$effect(() => {
@@ -39,35 +32,6 @@
 
 	$effect(() => {
 		if ($settings.cookies !== undefined) cookies = $settings.cookies;
-	});
-
-	// Auto-select library matching current libraryId, or first library if none matches
-	$effect(() => {
-		if ($libraries.length > 0) {
-			if ($settings.libraryId) {
-				const match = $libraries.find((lib: Library) => String(lib.id) === $settings.libraryId);
-				if (match) {
-					selectedLibraryId = String(match.id);
-				}
-			}
-			if (!selectedLibraryId) {
-				const first = $libraries[0];
-				selectedLibraryId = String(first.id);
-				youtubeService.setLibrary(String(first.id));
-			}
-		}
-	});
-
-	// Detect when inline add form closes (cancel or successful add)
-	$effect(() => {
-		if (showInlineAddForm && !$libState.showAddForm) {
-			showInlineAddForm = false;
-			if ($libraries.length > libraryCountOnOpen) {
-				const newest = $libraries[$libraries.length - 1];
-				selectedLibraryId = String(newest.id);
-				youtubeService.setLibrary(String(newest.id));
-			}
-		}
 	});
 
 	function handleModeChange(mode: DownloadMode) {
@@ -92,24 +56,6 @@
 	function handleVideoFormatChange(event: Event) {
 		const target = event.target as HTMLSelectElement;
 		youtubeService.setDefaultVideoFormat(target.value as VideoFormat);
-	}
-
-	async function handleLibrarySelect(event: Event) {
-		const target = event.target as HTMLSelectElement;
-		const libraryId = target.value;
-		if (!libraryId) return;
-
-		const library = $libraries.find((lib: Library) => String(lib.id) === libraryId);
-		if (library) {
-			selectedLibraryId = String(library.id);
-			youtubeService.setLibrary(String(library.id));
-		}
-	}
-
-	function handleShowAddForm() {
-		libraryCountOnOpen = $libraries.length;
-		showInlineAddForm = true;
-		libraryService.openAddForm();
 	}
 
 	async function handleSaveConfig() {
@@ -298,53 +244,16 @@
 			</div>
 		{/if}
 
-		<!-- Download Library -->
-		<div class="form-control">
-			<label class="label" for="library-select">
-				<span class="label-text">Download Library</span>
-			</label>
-
-			{#if $libraries.length > 0}
-				<div class="flex items-center gap-2">
-					<select
-						id="library-select"
-						class="select-bordered select flex-1"
-						value={selectedLibraryId}
-						onchange={handleLibrarySelect}
-					>
-						<option value="" disabled>Select a library...</option>
-						{#each $libraries as library (library.id)}
-							<option value={String(library.id)}>
-								{library.name}
-							</option>
-						{/each}
-					</select>
-					<button class="btn btn-ghost btn-sm" onclick={handleShowAddForm} title="Add new library">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-4 w-4"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-						</svg>
-					</button>
+		<!-- Download Library Path -->
+		{#if $library}
+			<div class="form-control">
+				<span class="label">
+					<span class="label-text">Download Location</span>
+				</span>
+				<div class="rounded-lg bg-base-300 px-3 py-2 font-mono text-sm text-base-content/70">
+					{$library.path}
 				</div>
-			{:else}
-				<div class="rounded-lg bg-base-300 p-4 text-center">
-					<p class="mb-2 text-sm text-base-content/60">No libraries configured</p>
-					<button class="btn btn-sm btn-primary" onclick={handleShowAddForm}>
-						Create Library
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		<!-- Inline Library Add Form -->
-		{#if showInlineAddForm && $libState.showAddForm}
-			<LibraryAddForm />
+			</div>
 		{/if}
 
 		<!-- Stats -->

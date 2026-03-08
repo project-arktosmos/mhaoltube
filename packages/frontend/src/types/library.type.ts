@@ -33,17 +33,6 @@ export interface Library {
 	dateAdded: number;
 }
 
-export interface DirectoryEntry {
-	name: string;
-	path: string;
-}
-
-export interface BrowseDirectoryResponse {
-	path: string;
-	parent: string | null;
-	directories: DirectoryEntry[];
-}
-
 export interface LibraryFileLink {
 	serviceId: string;
 	seasonNumber: number | null;
@@ -61,7 +50,6 @@ export interface LibraryFile {
 }
 
 export interface LibraryFilesResponse {
-	libraryId: string;
 	libraryPath: string;
 	files: LibraryFile[];
 }

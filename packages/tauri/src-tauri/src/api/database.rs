@@ -166,6 +166,24 @@ async fn get_table(
 }
 
 async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
+    // Clean the library directory of all non-DB files (downloaded media, subdirs, etc.)
+    let library_dir = crate::default_data_dir();
+    if library_dir.exists() {
+        for entry in std::fs::read_dir(&library_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with("mhaoltube.db") {
+                continue;
+            }
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            } else {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        tracing::info!("Cleaned library directory: {}", library_dir.display());
+    }
+
     let conn = state.db.lock();
 
     // Drop all triggers and tables, then reinitialize
@@ -204,26 +222,12 @@ async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
     crate::db::schema::initialize_schema(&conn).unwrap();
     crate::db::schema::initialize_module_schemas(&conn).unwrap();
 
-    // Re-seed default library
-    let library_path = crate::default_data_dir();
-    let library_path_str = library_path.to_string_lossy().to_string();
-    let library_id = uuid::Uuid::new_v4().to_string();
+    // Release the lock before calling seed_default_library (which acquires it via repos)
+    drop(conn);
 
-    conn.execute(
-        "INSERT INTO libraries (id, name, path, media_types, date_added) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![library_id, "Default", library_path_str, "[\"video\",\"image\",\"audio\",\"other\"]", chrono::Utc::now().timestamp_millis()],
-    ).unwrap();
+    state.seed_default_library();
 
-    conn.execute(
-        "INSERT INTO metadata (key, value, type) VALUES ('youtube.libraryId', ?1, 'string')
-         ON CONFLICT(key) DO UPDATE SET value = ?1",
-        params![library_id],
-    ).unwrap();
-    conn.execute(
-        "INSERT INTO metadata (key, value, type) VALUES ('torrent.libraryId', ?1, 'string')
-         ON CONFLICT(key) DO UPDATE SET value = ?1",
-        params![library_id],
-    ).unwrap();
+    let conn = state.db.lock();
 
     tracing::info!("Database reset complete");
 

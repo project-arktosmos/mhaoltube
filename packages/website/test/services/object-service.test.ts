@@ -49,7 +49,10 @@ describe('ObjectServiceClass', () => {
 	describe('add()', () => {
 		it('should add item when store is empty', () => {
 			// Create a service with null/undefined initial value
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(2, { name: 'New Object', value: 'new' });
 
 			emptyService.add(newItem);
@@ -58,7 +61,10 @@ describe('ObjectServiceClass', () => {
 		});
 
 		it('should update data property when adding item', () => {
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(2, { name: 'New Object', value: 'new' });
 
 			emptyService.add(newItem);
@@ -67,7 +73,10 @@ describe('ObjectServiceClass', () => {
 		});
 
 		it('should persist added item to localStorage', () => {
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(2, { name: 'New Object', value: 'new' });
 
 			emptyService.add(newItem);
@@ -113,14 +122,20 @@ describe('ObjectServiceClass', () => {
 		});
 
 		it('should throw error when no item exists', () => {
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(2, { name: 'New Object', value: 'new' });
 
 			expect(() => emptyService.update(newItem)).toThrow();
 		});
 
 		it('should include service id in error message', () => {
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(2, { name: 'New Object', value: 'new' });
 
 			expect(() => emptyService.update(newItem)).toThrow(/object-service:empty/);
@@ -187,7 +202,10 @@ describe('ObjectServiceClass', () => {
 		});
 
 		it('should work even when no object exists', () => {
-			const emptyService = new ObjectServiceClass<TestObject | null>('empty', null);
+			const emptyService = new ObjectServiceClass<TestObject>(
+				'empty',
+				null as unknown as TestObject
+			);
 			const newItem = createMockItem<TestObject>(1, { name: 'First Object', value: 'first' });
 
 			emptyService.set(newItem);

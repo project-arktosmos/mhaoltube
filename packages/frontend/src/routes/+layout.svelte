@@ -12,12 +12,11 @@
 	$effect(() => {
 		document.documentElement.setAttribute('data-theme', $themeStore.theme);
 	});
-
 </script>
 
 <div class="flex min-h-screen flex-col">
 	<Navbar />
-	<main class="min-w-0 flex-1">
+	<main class="min-w-0 flex-1 bg-base-300">
 		{@render children?.()}
 	</main>
 </div>

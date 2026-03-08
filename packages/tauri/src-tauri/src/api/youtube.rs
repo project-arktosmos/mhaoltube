@@ -446,7 +446,11 @@ async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
 /// Fetch a YouTube channel page HTML by handle.
 async fn fetch_channel_page(handle: &str) -> Result<String, String> {
     let page_url = format!("https://www.youtube.com/@{}", handle);
-    let resp = reqwest::get(&page_url)
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&page_url)
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
         .await
         .map_err(|e| format!("Failed to fetch channel page: {}", e))?;
 
@@ -497,7 +501,10 @@ struct ChannelMetaQuery {
     handle: String,
 }
 
-async fn channel_meta(Query(query): Query<ChannelMetaQuery>) -> impl IntoResponse {
+async fn channel_meta(
+    State(state): State<AppState>,
+    Query(query): Query<ChannelMetaQuery>,
+) -> impl IntoResponse {
     if query.handle.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -506,6 +513,36 @@ async fn channel_meta(Query(query): Query<ChannelMetaQuery>) -> impl IntoRespons
             .into_response();
     }
 
+    // Check if we already have cached metadata in the DB
+    let cached = {
+        let conn = state.db.lock();
+        conn.query_row(
+            "SELECT id, image_url, subscriber_text FROM youtube_channels WHERE handle = ?1",
+            rusqlite::params![query.handle],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .ok()
+    };
+
+    if let Some((channel_id, Some(image_url), Some(subscriber_text))) = &cached {
+        if !image_url.is_empty() && !subscriber_text.is_empty() {
+            return Json(ChannelMeta {
+                channel_id: channel_id.clone(),
+                avatar: image_url.clone(),
+                description: String::new(),
+                subscriber_text: subscriber_text.clone(),
+            })
+            .into_response();
+        }
+    }
+
+    // Not cached — fetch from YouTube
     let html = match fetch_channel_page(&query.handle).await {
         Ok(h) => h,
         Err(e) => {
@@ -520,8 +557,16 @@ async fn channel_meta(Query(query): Query<ChannelMetaQuery>) -> impl IntoRespons
     let channel_id = extract_channel_id(&html).unwrap_or_default();
     let avatar = extract_og_meta(&html, "og:image").unwrap_or_default();
     let description = extract_og_meta(&html, "og:description").unwrap_or_default();
-    let subscriber_text = extract_json_string(&html, "\"subscriberCountText\"")
-        .unwrap_or_default();
+    let subscriber_text = extract_subscriber_count(&html).unwrap_or_default();
+
+    // Persist to DB if we have a matching channel row
+    if !avatar.is_empty() || !subscriber_text.is_empty() {
+        let conn = state.db.lock();
+        let _ = conn.execute(
+            "UPDATE youtube_channels SET image_url = ?1, subscriber_text = ?2 WHERE handle = ?3",
+            rusqlite::params![avatar, subscriber_text, query.handle],
+        );
+    }
 
     Json(ChannelMeta {
         channel_id,
@@ -545,24 +590,111 @@ fn extract_og_meta(html: &str, property: &str) -> Option<String> {
     Some(html_decode(&rest[..end]))
 }
 
-/// Extract a text value from YouTube's JSON-LD / initial data in the page.
-fn extract_json_string(html: &str, key: &str) -> Option<String> {
-    let pos = html.find(key)?;
-    let rest = &html[pos + key.len()..];
-    // Look for "simpleText":"..." or "content":"..."
-    for text_key in &["\"simpleText\":\"", "\"content\":\""] {
-        if let Some(start) = rest.find(text_key) {
-            if start > 200 {
-                continue; // Too far from key, likely wrong match
-            }
-            let val_start = start + text_key.len();
-            let val_rest = &rest[val_start..];
-            if let Some(end) = val_rest.find('"') {
-                return Some(html_decode(&val_rest[..end]));
+/// Extract subscriber count from the channel page HTML.
+/// YouTube embeds this in several formats depending on the channel.
+fn extract_subscriber_count(html: &str) -> Option<String> {
+    // Strategy 1: "subscriberCountText":{"simpleText":"..."}
+    if let Some(pos) = html.find("\"subscriberCountText\"") {
+        let rest = &html[pos..];
+        if let Some(st) = extract_nested_text(rest, "\"simpleText\":\"") {
+            return Some(st);
+        }
+        if let Some(st) = extract_nested_text(rest, "\"label\":\"") {
+            if st.contains("subscriber") {
+                return Some(st);
             }
         }
     }
+
+    // Strategy 2: "content":"NNK subscribers" inside metadataParts
+    // This is the most common format for many channels
+    {
+        let needle = " subscribers\"";
+        let mut search_from = 0;
+        while let Some(pos) = html[search_from..].find(needle) {
+            let abs_pos = search_from + pos;
+            // Walk backwards to find "content":" before this
+            let start = if abs_pos > 200 { abs_pos - 200 } else { 0 };
+            let region = &html[start..abs_pos];
+            if let Some(content_pos) = region.rfind("\"content\":\"") {
+                let val_start = content_pos + "\"content\":\"".len();
+                let val = &region[val_start..];
+                let decoded = decode_json_unicode(val);
+                let trimmed = decoded.trim();
+                if !trimmed.is_empty() {
+                    return Some(format!("{} subscribers", trimmed));
+                }
+            }
+            search_from = abs_pos + needle.len();
+        }
+    }
+
+    // Strategy 3: Unicode bidi isolate chars around "X subscribers"
+    {
+        let marker = " subscribers";
+        let mut search_from = 0;
+        while let Some(pos) = html[search_from..].find(marker) {
+            let abs_pos = search_from + pos;
+            let before = &html[..abs_pos];
+            if let Some(bidi_start) = before.rfind('\u{2068}') {
+                if abs_pos - bidi_start < 50 {
+                    let count = &html[bidi_start + '\u{2068}'.len_utf8()..abs_pos];
+                    let count = count.trim();
+                    if !count.is_empty() {
+                        return Some(format!("{} subscribers", count));
+                    }
+                }
+            }
+            search_from = abs_pos + marker.len();
+        }
+    }
+
     None
+}
+
+/// Extract a quoted string value near a JSON key.
+fn extract_nested_text(haystack: &str, key: &str) -> Option<String> {
+    let start = haystack.find(key)?;
+    if start > 300 {
+        return None; // too far, wrong match
+    }
+    let val_start = start + key.len();
+    let rest = &haystack[val_start..];
+    let end = rest.find('"')?;
+    let raw = &rest[..end];
+    // Decode Unicode escapes like \u0026, \u2068 etc.
+    Some(decode_json_unicode(raw))
+}
+
+/// Decode JSON unicode escape sequences and HTML entities.
+fn decode_json_unicode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                        if let Some(ch) = char::from_u32(code) {
+                            result.push(ch);
+                            continue;
+                        }
+                    }
+                    result.push_str("\\u");
+                    result.push_str(&hex);
+                }
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    html_decode(&result)
 }
 
 fn html_decode(s: &str) -> String {
@@ -582,9 +714,10 @@ struct ImageProxyQuery {
 
 async fn image_proxy(Query(query): Query<ImageProxyQuery>) -> impl IntoResponse {
     // Only allow proxying YouTube image URLs
-    if !query.url.starts_with("https://yt3.ggpht.com/")
-        && !query.url.starts_with("https://i.ytimg.com/")
-    {
+    let allowed = query.url.starts_with("https://yt3.ggpht.com/")
+        || query.url.starts_with("https://yt3.googleusercontent.com/")
+        || query.url.starts_with("https://i.ytimg.com/");
+    if !allowed {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "Only YouTube image URLs are allowed" })),

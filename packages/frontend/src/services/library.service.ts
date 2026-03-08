@@ -1,10 +1,8 @@
-import { get, writable, type Writable } from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { apiUrl } from '$lib/api-base';
 import type {
 	Library,
-	DirectoryEntry,
-	BrowseDirectoryResponse,
 	LibraryFile,
 	LibraryFilesResponse,
 	MediaTypeOption,
@@ -13,37 +11,19 @@ import type {
 import { type MediaType } from '$types/library.type';
 
 export interface LibraryServiceState {
-	showAddForm: boolean;
-	browsing: boolean;
-	browseError: string | null;
-	currentBrowsePath: string;
-	browseDirectories: DirectoryEntry[];
-	browseParent: string | null;
-	selectedPath: string;
-	selectedName: string;
-	selectedMediaTypes: MediaType[];
-	libraryFiles: Record<string, LibraryFile[]>;
-	libraryFilesLoading: Record<string, boolean>;
-	libraryFilesError: Record<string, string | null>;
+	files: LibraryFile[];
+	filesLoading: boolean;
+	filesError: string | null;
 }
 
 const initialState: LibraryServiceState = {
-	showAddForm: false,
-	browsing: false,
-	browseError: null,
-	currentBrowsePath: '',
-	browseDirectories: [],
-	browseParent: null,
-	selectedPath: '',
-	selectedName: '',
-	selectedMediaTypes: [],
-	libraryFiles: {},
-	libraryFilesLoading: {},
-	libraryFilesError: {}
+	files: [],
+	filesLoading: false,
+	filesError: null
 };
 
 class LibraryService {
-	public store: Writable<Library[]> = writable([]);
+	public library: Writable<Library | null> = writable(null);
 	public state: Writable<LibraryServiceState> = writable(initialState);
 
 	private initialized = false;
@@ -52,185 +32,62 @@ class LibraryService {
 		if (!browser || this.initialized) return;
 
 		try {
-			const libraries = await this.fetchJson<Library[]>('/api/libraries');
-			this.store.set(libraries);
+			const library = await this.fetchJson<Library>('/api/libraries');
+			this.library.set(library);
 			this.initialized = true;
-
-			for (const library of libraries) {
-				this.fetchLibraryFiles(library.id as string);
-			}
+			this.fetchFiles();
 		} catch (error) {
 			console.error('[library] Failed to initialize:', error);
 		}
 	}
 
-	async browseDirectory(path?: string): Promise<void> {
+	async fetchFiles(): Promise<void> {
 		if (!browser) return;
 
-		this.state.update((s) => ({ ...s, browsing: true, browseError: null }));
+		this.state.update((s) => ({ ...s, filesLoading: true, filesError: null }));
 
 		try {
-			const params = path ? `?path=${encodeURIComponent(path)}` : '';
-			const response = await this.fetchJson<BrowseDirectoryResponse>(
-				`/api/libraries/browse${params}`
-			);
-
+			const response = await this.fetchJson<LibraryFilesResponse>('/api/libraries/files');
 			this.state.update((s) => ({
 				...s,
-				browsing: false,
-				currentBrowsePath: response.path,
-				browseDirectories: response.directories,
-				browseParent: response.parent
+				files: response.files,
+				filesLoading: false
 			}));
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			this.state.update((s) => ({
 				...s,
-				browsing: false,
-				browseError: `Failed to browse directory: ${errorMsg}`
+				filesLoading: false,
+				filesError: errorMsg
 			}));
 		}
 	}
 
-	async addLibrary(name: string, path: string, mediaTypes: MediaType[]): Promise<void> {
+	async scanFiles(): Promise<void> {
 		if (!browser) return;
 
+		this.state.update((s) => ({ ...s, filesLoading: true, filesError: null }));
+
 		try {
-			const library = await this.fetchJson<Library>('/api/libraries', {
-				method: 'POST',
-				body: JSON.stringify({ name, path, mediaTypes })
+			const response = await this.fetchJson<LibraryFilesResponse>('/api/libraries/scan', {
+				method: 'POST'
 			});
-
-			this.store.update((items) => [...items, library]);
-			this.resetForm();
-		} catch (error) {
-			console.error('[library] Failed to add library:', error);
-		}
-	}
-
-	async removeLibrary(library: Library): Promise<void> {
-		if (!browser) return;
-
-		try {
-			await this.fetchJson(`/api/libraries/${library.id}`, { method: 'DELETE' });
-			this.store.update((items) => items.filter((i) => i.id !== library.id));
-		} catch (error) {
-			console.error('[library] Failed to remove library:', error);
-		}
-	}
-
-	openAddForm(): void {
-		this.state.update((s) => ({
-			...s,
-			showAddForm: true,
-			selectedPath: '',
-			selectedName: '',
-			selectedMediaTypes: [],
-			browseError: null
-		}));
-		this.browseDirectory();
-	}
-
-	closeAddForm(): void {
-		this.state.update((s) => ({
-			...s,
-			showAddForm: false,
-			selectedPath: '',
-			selectedName: '',
-			selectedMediaTypes: [],
-			currentBrowsePath: '',
-			browseDirectories: [],
-			browseParent: null,
-			browseError: null
-		}));
-	}
-
-	selectDirectory(path: string, name: string): void {
-		this.state.update((s) => ({
-			...s,
-			selectedPath: path,
-			selectedName: s.selectedName || name
-		}));
-	}
-
-	setSelectedName(name: string): void {
-		this.state.update((s) => ({ ...s, selectedName: name }));
-	}
-
-	toggleMediaType(mediaType: MediaType): void {
-		this.state.update((s) => {
-			const types = s.selectedMediaTypes.includes(mediaType)
-				? s.selectedMediaTypes.filter((t) => t !== mediaType)
-				: [...s.selectedMediaTypes, mediaType];
-			return { ...s, selectedMediaTypes: types };
-		});
-	}
-
-	async fetchLibraryFiles(libraryId: string): Promise<void> {
-		if (!browser) return;
-
-		this.state.update((s) => ({
-			...s,
-			libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: true },
-			libraryFilesError: { ...s.libraryFilesError, [libraryId]: null }
-		}));
-
-		try {
-			const response = await this.fetchJson<LibraryFilesResponse>(
-				`/api/libraries/${libraryId}/files`
-			);
 			this.state.update((s) => ({
 				...s,
-				libraryFiles: { ...s.libraryFiles, [libraryId]: response.files },
-				libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: false }
+				files: response.files,
+				filesLoading: false
 			}));
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			this.state.update((s) => ({
 				...s,
-				libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: false },
-				libraryFilesError: { ...s.libraryFilesError, [libraryId]: errorMsg }
+				filesLoading: false,
+				filesError: errorMsg
 			}));
 		}
-	}
-
-	async scanLibraryFiles(libraryId: string): Promise<void> {
-		if (!browser) return;
-
-		this.state.update((s) => ({
-			...s,
-			libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: true },
-			libraryFilesError: { ...s.libraryFilesError, [libraryId]: null }
-		}));
-
-		try {
-			const response = await this.fetchJson<LibraryFilesResponse>(
-				`/api/libraries/${libraryId}/scan`,
-				{ method: 'POST' }
-			);
-			this.state.update((s) => ({
-				...s,
-				libraryFiles: { ...s.libraryFiles, [libraryId]: response.files },
-				libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: false }
-			}));
-		} catch (error) {
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			this.state.update((s) => ({
-				...s,
-				libraryFilesLoading: { ...s.libraryFilesLoading, [libraryId]: false },
-				libraryFilesError: { ...s.libraryFilesError, [libraryId]: errorMsg }
-			}));
-		}
-	}
-
-	async scanAllLibraries(): Promise<void> {
-		if (!browser) return;
-		const libraries = get(this.store);
-		await Promise.all(libraries.map((lib) => this.scanLibraryFiles(lib.id as string)));
 	}
 
 	async linkTmdb(
-		libraryId: string,
 		itemId: string,
 		tmdbId: number,
 		seasonNumber: number | null = null,
@@ -238,234 +95,171 @@ class LibraryService {
 	): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/tmdb`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/tmdb`, {
 			method: 'PUT',
 			body: JSON.stringify({ tmdbId, seasonNumber, episodeNumber })
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) =>
-						f.id === itemId
-							? {
-									...f,
-									links: {
-										...f.links,
-										tmdb: { serviceId: String(tmdbId), seasonNumber, episodeNumber }
-									}
-								}
-							: f
-					)
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) =>
+				f.id === itemId
+					? {
+							...f,
+							links: {
+								...f.links,
+								tmdb: { serviceId: String(tmdbId), seasonNumber, episodeNumber }
+							}
+						}
+					: f
+			)
+		}));
 	}
 
-	async unlinkTmdb(libraryId: string, itemId: string): Promise<void> {
+	async unlinkTmdb(itemId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/tmdb`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/tmdb`, {
 			method: 'DELETE'
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) => {
-						if (f.id !== itemId) return f;
-						const { tmdb: _, ...rest } = f.links;
-						return { ...f, links: rest };
-					})
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) => {
+				if (f.id !== itemId) return f;
+				const { tmdb: _, ...rest } = f.links;
+				return { ...f, links: rest };
+			})
+		}));
 	}
 
-	async linkYoutube(libraryId: string, itemId: string, youtubeId: string): Promise<void> {
+	async linkYoutube(itemId: string, youtubeId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/youtube`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/youtube`, {
 			method: 'PUT',
 			body: JSON.stringify({ youtubeId })
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) =>
-						f.id === itemId
-							? {
-									...f,
-									links: {
-										...f.links,
-										youtube: { serviceId: youtubeId, seasonNumber: null, episodeNumber: null }
-									}
-								}
-							: f
-					)
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) =>
+				f.id === itemId
+					? {
+							...f,
+							links: {
+								...f.links,
+								youtube: { serviceId: youtubeId, seasonNumber: null, episodeNumber: null }
+							}
+						}
+					: f
+			)
+		}));
 	}
 
-	async unlinkYoutube(libraryId: string, itemId: string): Promise<void> {
+	async unlinkYoutube(itemId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/youtube`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/youtube`, {
 			method: 'DELETE'
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) => {
-						if (f.id !== itemId) return f;
-						const { youtube: _, ...rest } = f.links;
-						return { ...f, links: rest };
-					})
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) => {
+				if (f.id !== itemId) return f;
+				const { youtube: _, ...rest } = f.links;
+				return { ...f, links: rest };
+			})
+		}));
 	}
 
-	async linkMusicBrainz(libraryId: string, itemId: string, musicbrainzId: string): Promise<void> {
+	async linkMusicBrainz(itemId: string, musicbrainzId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/musicbrainz`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/musicbrainz`, {
 			method: 'PUT',
 			body: JSON.stringify({ musicbrainzId })
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) =>
-						f.id === itemId
-							? {
-									...f,
-									links: {
-										...f.links,
-										musicbrainz: {
-											serviceId: musicbrainzId,
-											seasonNumber: null,
-											episodeNumber: null
-										}
-									}
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) =>
+				f.id === itemId
+					? {
+							...f,
+							links: {
+								...f.links,
+								musicbrainz: {
+									serviceId: musicbrainzId,
+									seasonNumber: null,
+									episodeNumber: null
 								}
-							: f
-					)
-				}
-			};
-		});
+							}
+						}
+					: f
+			)
+		}));
 	}
 
-	async unlinkMusicBrainz(libraryId: string, itemId: string): Promise<void> {
+	async unlinkMusicBrainz(itemId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/musicbrainz`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/musicbrainz`, {
 			method: 'DELETE'
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) => {
-						if (f.id !== itemId) return f;
-						const { musicbrainz: _, ...rest } = f.links;
-						return { ...f, links: rest };
-					})
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) => {
+				if (f.id !== itemId) return f;
+				const { musicbrainz: _, ...rest } = f.links;
+				return { ...f, links: rest };
+			})
+		}));
 	}
 
-	async updateCategory(libraryId: string, itemId: string, categoryId: string): Promise<void> {
+	async updateCategory(itemId: string, categoryId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/category`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/category`, {
 			method: 'PUT',
 			body: JSON.stringify({ categoryId })
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) => (f.id === itemId ? { ...f, categoryId } : f))
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) => (f.id === itemId ? { ...f, categoryId } : f))
+		}));
 	}
 
-	async clearCategory(libraryId: string, itemId: string): Promise<void> {
+	async clearCategory(itemId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/category`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/category`, {
 			method: 'DELETE'
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) => (f.id === itemId ? { ...f, categoryId: null } : f))
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) => (f.id === itemId ? { ...f, categoryId: null } : f))
+		}));
 	}
 
-	async updateMediaType(libraryId: string, itemId: string, mediaTypeId: string): Promise<void> {
+	async updateMediaType(itemId: string, mediaTypeId: string): Promise<void> {
 		if (!browser) return;
 
-		await this.fetchJson(`/api/libraries/${libraryId}/items/${itemId}/media-type`, {
+		await this.fetchJson(`/api/libraries/items/${itemId}/media-type`, {
 			method: 'PUT',
 			body: JSON.stringify({ mediaTypeId })
 		});
 
-		this.state.update((s) => {
-			const files = s.libraryFiles[libraryId];
-			if (!files) return s;
-			return {
-				...s,
-				libraryFiles: {
-					...s.libraryFiles,
-					[libraryId]: files.map((f) =>
-						f.id === itemId ? { ...f, mediaType: mediaTypeId as MediaType, categoryId: null } : f
-					)
-				}
-			};
-		});
+		this.state.update((s) => ({
+			...s,
+			files: s.files.map((f) =>
+				f.id === itemId ? { ...f, mediaType: mediaTypeId as MediaType, categoryId: null } : f
+			)
+		}));
 	}
 
 	async fetchMediaTypes(): Promise<MediaTypeOption[]> {
@@ -475,20 +269,6 @@ class LibraryService {
 	async fetchCategories(mediaType?: string): Promise<CategoryOption[]> {
 		const params = mediaType ? `?mediaType=${encodeURIComponent(mediaType)}` : '';
 		return this.fetchJson<CategoryOption[]>(`/api/libraries/categories${params}`);
-	}
-
-	private resetForm(): void {
-		this.state.update((s) => ({
-			...s,
-			showAddForm: false,
-			selectedPath: '',
-			selectedName: '',
-			selectedMediaTypes: [],
-			currentBrowsePath: '',
-			browseDirectories: [],
-			browseParent: null,
-			browseError: null
-		}));
 	}
 
 	private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
