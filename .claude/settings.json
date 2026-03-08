@@ -1,0 +1,60 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm *)",
+      "Bash(git *)",
+      "Bash(cargo *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(rustc *)",
+      "Read(//Users/bearni/project-arktosmos/mhaol.git/**)",
+      "Read(//Users/bearni/project-arktosmos/mhaol.git/packages/frontend/**)",
+      "Bash(cp /Users/bearni/project-arktosmos/mhaol.git/.env.app /Users/bearni/project-arktosmos/mhaoltube.git/.env.app)",
+      "Bash(cp /Users/bearni/project-arktosmos/mhaol.git/.env.identities /Users/bearni/project-arktosmos/mhaoltube.git/.env.identities)",
+      "Bash(cp /Users/bearni/project-arktosmos/mhaol.git/packages/frontend/.env /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/.env)",
+      "Bash(cp /Users/bearni/project-arktosmos/mhaol.git/packages/frontend/.env.identities /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/.env.identities)",
+      "Read(//Users/bearni/project-arktosmos/mhaoltube.git/**)",
+      "Bash(done)",
+      "Bash(grep -A 2 '\"\"description\"\"')",
+      "Bash(grep -l \"youtube\\\\|yt-dlp\" /Users/bearni/project-arktosmos/mhaoltube.git/addons/*/package.json)",
+      "Bash(for addon in musicbrainz torrent-search-thepiratebay image-tagger)",
+      "Bash(do echo \"=== $addon ===\")",
+      "Read(//Users/bearni/project-arktosmos/mhaoltube.git/addons/$addon/**)",
+      "Read(//Users/bearni/project-arktosmos/mhaoltube.git/packages/$addon/**)",
+      "Bash(rm -f api/addons.rs api/identities.rs api/images.rs api/lyrics.rs api/musicbrainz.rs api/p2p_stream.rs api/plugins.rs api/signaling.rs api/signaling_ws.rs api/tmdb.rs api/torrent.rs)",
+      "Bash(rm -f modules/image_tagger.rs modules/lyrics.rs modules/musicbrainz.rs modules/p2p_stream.rs modules/signaling.rs modules/signaling_deploy.rs modules/tmdb.rs modules/torrent.rs modules/torrent_search.rs)",
+      "Bash(rm -rf identity)",
+      "Bash(rm -f signaling_rooms.rs worker_bridge.rs)",
+      "Bash(rm -f db/repo/torrent_download.rs db/repo/image_tag.rs db/repo/signaling_server.rs)",
+      "Read(//Users/bearni/project-arktosmos/**)",
+      "Bash(rm -rf components/torrent components/downloads components/p2p-stream components/signaling components/images components/identity components/addons components/plugins)",
+      "Bash(rm -f services/torrent.service.ts services/torrent-search.service.ts services/downloads.service.ts services/signaling-chat.service.ts services/image-tagger.service.ts services/identity.service.ts services/wallet.service.ts services/lyrics.service.ts services/p2p-stream.service.ts)",
+      "Bash(rm -f types/torrent.type.ts types/download.type.ts types/p2p-stream.type.ts types/signaling.type.ts types/image-tagger.type.ts types/identity.type.ts)",
+      "Bash(rm -f adapters/classes/signaling.adapter.ts adapters/classes/identity.adapter.ts)",
+      "Bash(rm -f components/libraries/TmdbLinkModal.svelte components/libraries/MusicBrainzLinkModal.svelte)",
+      "Bash(rm -f components/player/LyricsPanel.svelte)",
+      "Bash(npx vite build)",
+      "Bash(grep -r \"identity\\\\|signaling\\\\|torrent\\\\|downloads\\\\|plugins\\\\|addons\" /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/services/*.ts)",
+      "Bash(grep -rn \"from ''tmdb\\\\|from ''musicbrainz\\\\|from \"\"tmdb\\\\|from \"\"musicbrainz\" packages/frontend/src/)",
+      "Bash(echo \"exit: $?\")"
+    ],
+    "additionalDirectories": [
+      "/Users/bearni/project-arktosmos/mhaoltube.git/.git"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-commit-check.sh",
+            "timeout": 300,
+            "statusMessage": "Running pre-commit checks..."
+          }
+        ]
+      }
+    ]
+  }
+}

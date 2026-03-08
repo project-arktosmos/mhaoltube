@@ -1,0 +1,15 @@
+@plugin 'daisyui/theme' {
+	name: 'light';
+	default: true;
+	prefersdark: false;
+	--color-primary: oklch(0.637 0.237 25.331);
+	--color-primary-content: oklch(0.971 0.013 17.38);
+}
+
+@plugin 'daisyui/theme' {
+	name: 'dark';
+	default: false;
+	prefersdark: true;
+	--color-primary: oklch(0.637 0.237 25.331);
+	--color-primary-content: oklch(0.971 0.013 17.38);
+}

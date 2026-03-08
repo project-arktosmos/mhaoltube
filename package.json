@@ -1,0 +1,35 @@
+{
+	"name": "mhaoltube-monorepo",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "lsof -ti:1530 | xargs kill -9 2>/dev/null; sleep 1; set -a; . ./.env.app 2>/dev/null; set +a; cargo build --bin mhaoltube-server && { PORT=1530 cargo run -p mhaoltube-backend --bin mhaoltube-server & BACKEND_PID=$!; trap 'kill $BACKEND_PID 2>/dev/null' EXIT; echo 'Waiting for backend on port 1530...'; until curl -s http://localhost:1530/api/ytdl/status > /dev/null 2>&1; do sleep 0.5; done; echo 'Backend ready.'; pnpm -r --filter tauri dev; }",
+		"start": "lsof -ti:1530 | xargs kill -9 2>/dev/null; sleep 1; set -a; . ./.env.app 2>/dev/null; set +a; { PORT=1530 ./target/release/mhaoltube-server & BACKEND_PID=$!; trap 'kill $BACKEND_PID 2>/dev/null' EXIT; echo 'Waiting for backend on port 1530...'; until curl -s http://localhost:1530/api/ytdl/status > /dev/null 2>&1; do sleep 0.5; done; echo 'Backend ready.'; pnpm -r --filter frontend preview; }",
+		"dev:backend": "set -a; . ./.env.app 2>/dev/null; set +a; PORT=1530 cargo run -p mhaoltube-backend --bin mhaoltube-server",
+		"dev:frontend": "pnpm -r --filter frontend dev",
+		"dev:website": "pnpm -r --filter website dev",
+		"build": "cargo build --release --bin mhaoltube-server && pnpm -r --filter frontend build",
+		"build:backend": "cargo build --release --bin mhaoltube-server",
+		"preview": "pnpm -r --filter frontend preview",
+		"test": "pnpm -r run test && cargo test -p mhaoltube-backend",
+		"test:e2e": "pnpm -r --filter frontend test:e2e",
+		"lint": "pnpm -r run lint",
+		"format": "pnpm -r run format",
+		"check": "pnpm -r run check && cargo check -p mhaoltube-backend",
+		"clean": "pnpm -r run clean && cargo clean",
+		"tauri:dev": "pnpm -r --filter tauri dev",
+		"tauri:build": "pnpm -r --filter tauri build",
+		"dev:android": "pnpm -r --filter tauri android:dev",
+		"tauri:android:dev": "pnpm -r --filter tauri tauri android dev",
+		"tauri:android:build": "pnpm -r --filter tauri tauri android build --apk",
+		"install:deps": "sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev"
+	},
+	"engines": {
+		"node": ">=18",
+		"pnpm": ">=9"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+	}
+}

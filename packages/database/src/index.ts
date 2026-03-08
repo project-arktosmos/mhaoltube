@@ -1,0 +1,29 @@
+export { getDatabase, closeDatabase, isDatabaseOpen } from "./connection.js";
+export { initializeSchema } from "./schema.js";
+export { SettingsRepository } from "./repositories/settings.repository.js";
+export { MetadataRepository } from "./repositories/metadata.repository.js";
+export { YouTubeDownloadRepository } from "./repositories/youtube-download.repository.js";
+export { LibraryRepository } from "./repositories/library.repository.js";
+export { LibraryItemRepository } from "./repositories/library-item.repository.js";
+export { LibraryItemLinkRepository } from "./repositories/library-item-link.repository.js";
+export { MediaTypeRepository } from "./repositories/media-type.repository.js";
+export { CategoryRepository } from "./repositories/category.repository.js";
+export { LinkSourceRepository } from "./repositories/link-source.repository.js";
+export { MediaListRepository } from "./repositories/media-list.repository.js";
+export { MediaListItemRepository } from "./repositories/media-list-item.repository.js";
+export { MediaListLinkRepository } from "./repositories/media-list-link.repository.js";
+export type {
+  SettingRow,
+  MetadataRow,
+  DatabaseConfig,
+  YouTubeDownloadRow,
+  LibraryRow,
+  LibraryItemRow,
+  LibraryItemLinkRow,
+  MediaTypeRow,
+  CategoryRow,
+  LinkSourceRow,
+  MediaListRow,
+  MediaListItemRow,
+  MediaListLinkRow,
+} from "./types.js";

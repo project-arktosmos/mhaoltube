@@ -1,0 +1,53 @@
+{
+	"nav": {
+		"features": "Features",
+		"platforms": "Platforms",
+		"github": "GitHub"
+	},
+	"hero": {
+		"title": "Your media, your rules",
+		"subtitle": "Mhaoltube is an open-source alternative YouTube client that puts you in control. Download videos, build your library, and enjoy your content without compromises.",
+		"cta": "Get Started",
+		"source": "View Source"
+	},
+	"features": {
+		"heading": "Everything you need",
+		"subheading": "A complete media toolkit built for power users who value freedom and privacy.",
+		"download": {
+			"title": "YouTube Downloads",
+			"description": "Download videos and audio directly from YouTube. Save content for offline viewing in your preferred format and quality."
+		},
+		"search": {
+			"title": "YouTube Search",
+			"description": "Search and browse YouTube content natively within the app. No browser needed, no tracking, no ads."
+		},
+		"library": {
+			"title": "Media Libraries",
+			"description": "Organize your downloaded media into libraries. Tag, categorize, and browse your collection with a clean interface."
+		},
+		"player": {
+			"title": "Built-in Player",
+			"description": "Play your media with a fully integrated player. Supports video and audio playback with a minimal, distraction-free UI."
+		},
+		"addons": {
+			"title": "Addon System",
+			"description": "Extend functionality with addons for lyrics, music metadata, movie info, and more. The plugin architecture lets you customize your experience."
+		},
+		"crossplatform": {
+			"title": "Cross-Platform",
+			"description": "Runs on macOS and Android today, with more platforms on the way. Built with Tauri for a fast, native experience everywhere."
+		}
+	},
+	"platforms": {
+		"heading": "Available on your devices",
+		"subheading": "Built with Tauri for native performance on every platform.",
+		"macos": "macOS",
+		"android": "Android",
+		"more": "More platforms coming soon"
+	},
+	"footer": {
+		"tagline": "Open-source alternative YouTube client",
+		"license": "Released under open-source license",
+		"built_with": "Built with SvelteKit, Rust, and Tauri"
+	}
+}

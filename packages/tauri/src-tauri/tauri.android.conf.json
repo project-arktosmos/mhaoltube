@@ -1,0 +1,9 @@
+{
+	"build": {
+		"beforeBuildCommand": "pnpm --filter frontend build",
+		"frontendDist": "../../frontend/dist-static"
+	},
+	"bundle": {
+		"resources": null
+	}
+}
