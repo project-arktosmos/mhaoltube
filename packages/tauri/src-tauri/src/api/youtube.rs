@@ -1,8 +1,9 @@
 use crate::db::DbPool;
 use crate::AppState;
 use axum::{
+    body::Body,
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -15,6 +16,7 @@ pub fn router() -> Router<AppState> {
         .route("/channel-feed", get(channel_feed))
         .route("/channel-rss", get(channel_rss))
         .route("/channel-meta", get(channel_meta))
+        .route("/image-proxy", get(image_proxy))
 }
 
 /// Fetch YouTube oEmbed data for a video ID, using the cache if available.
@@ -569,6 +571,60 @@ fn html_decode(s: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
+}
+
+// ===== Image Proxy =====
+
+#[derive(Deserialize)]
+struct ImageProxyQuery {
+    url: String,
+}
+
+async fn image_proxy(Query(query): Query<ImageProxyQuery>) -> impl IntoResponse {
+    // Only allow proxying YouTube image URLs
+    if !query.url.starts_with("https://yt3.ggpht.com/")
+        && !query.url.starts_with("https://i.ytimg.com/")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Only YouTube image URLs are allowed" })),
+        )
+            .into_response();
+    }
+
+    let resp = match reqwest::get(&query.url).await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    if !resp.status().is_success() {
+        return StatusCode::BAD_GATEWAY.into_response();
+    }
+
+    let content_type = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+    };
+
+    (
+        [(header::CONTENT_TYPE, content_type),
+         (header::CACHE_CONTROL, "public, max-age=86400".to_string())],
+        Body::from(bytes),
+    )
+        .into_response()
 }
 
 fn parse_rss_feed(xml: &str) -> (String, Vec<RssVideo>) {

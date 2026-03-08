@@ -59,21 +59,17 @@
 		}
 	}
 
-	function fetchAllChannelMeta(rows: YouTubeChannel[]) {
+	async function fetchAllChannelMeta(rows: YouTubeChannel[]) {
 		for (const channel of rows) {
 			if (channelMeta[channel.handle]) continue;
-			fetchChannelMeta(channel.handle);
-		}
-	}
-
-	async function fetchChannelMeta(handle: string) {
-		try {
-			const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${handle}`));
-			if (!res.ok) return;
-			const data: YouTubeChannelMeta = await res.json();
-			channelMeta = { ...channelMeta, [handle]: data };
-		} catch {
-			// Silently ignore metadata fetch failures
+			try {
+				const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${channel.handle}`));
+				if (!res.ok) continue;
+				const data: YouTubeChannelMeta = await res.json();
+				channelMeta = { ...channelMeta, [channel.handle]: data };
+			} catch {
+				// Silently ignore metadata fetch failures
+			}
 		}
 	}
 
@@ -206,7 +202,7 @@
 				>
 					{#if meta?.avatar}
 						<img
-							src={meta.avatar}
+							src={apiUrl(`/api/youtube/image-proxy?url=${encodeURIComponent(meta.avatar)}`)}
 							alt={channel.name}
 							class="h-10 w-10 shrink-0 rounded-full object-cover"
 							loading="lazy"
