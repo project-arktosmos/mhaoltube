@@ -14,15 +14,8 @@
 		onedittype: (file: LibraryFile, mediaType: string, categoryId: string | null) => void;
 	}
 
-	let {
-		files,
-		loading,
-		error,
-		onscan,
-		onyoutubelink,
-		onyoutubeunlink,
-		onedittype
-	}: Props = $props();
+	let { files, loading, error, onscan, onyoutubelink, onyoutubeunlink, onedittype }: Props =
+		$props();
 
 	let youtubePreviewFile: LibraryFile | null = $state(null);
 	let typeCategoryModalFile: LibraryFile | null = $state(null);

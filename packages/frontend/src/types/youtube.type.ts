@@ -248,6 +248,25 @@ export function extractPlaylistId(url: string): string | null {
 	return match ? match[1] : null;
 }
 
+// ===== Channel Feed (InnerTube Browse) =====
+
+export interface YouTubeChannelFeedVideo {
+	videoId: string;
+	title: string;
+	thumbnail: string;
+	duration: number;
+	durationText: string;
+	views: number;
+	viewsText: string;
+	publishedText: string;
+}
+
+export interface YouTubeChannelFeedResponse {
+	channelId: string;
+	videos: YouTubeChannelFeedVideo[];
+	continuation: string | null;
+}
+
 // ===== oEmbed Metadata =====
 
 export interface YouTubeOEmbedData {

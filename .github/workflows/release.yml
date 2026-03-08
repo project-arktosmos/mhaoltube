@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-linux-tauri:
@@ -193,3 +195,60 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: mhaoltube-*-android-universal.apk
+
+  deploy-website:
+    needs: [build-linux-tauri, build-macos-tauri, build-windows-tauri, build-android]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Fetch release asset URLs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ASSETS=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq '.assets[] | {name: .name, url: .browser_download_url}')
+
+          get_url() {
+            echo "$ASSETS" | jq -r "select(.name | test(\"$1\")) | .url" | head -1
+          }
+
+          MACOS=$(get_url '\\.(dmg)$')
+          WINDOWS=$(get_url '\\.(msi|exe)$')
+          LINUX=$(get_url '\\.(AppImage|deb)$')
+          ANDROID=$(get_url '\\.apk$')
+
+          cat > packages/website/src/data/releases.json << EOF
+          {
+            "macos": "${MACOS:-}",
+            "windows": "${WINDOWS:-}",
+            "linux": "${LINUX:-}",
+            "android": "${ANDROID:-}"
+          }
+          EOF
+
+      - name: Build website
+        run: pnpm -r --filter website build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/website/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

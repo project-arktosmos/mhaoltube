@@ -24,7 +24,7 @@ const API_PREFIX = '/api/ytdl';
 const initialSettings: YouTubeSettings = {
 	id: 'youtube-settings',
 	downloadMode: 'audio',
-	defaultQuality: 'high',
+	defaultQuality: 'best',
 	defaultFormat: 'aac',
 	defaultVideoQuality: 'best',
 	defaultVideoFormat: 'mp4',

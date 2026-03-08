@@ -22,8 +22,10 @@
 		navigator.clipboard.writeText(path);
 	}
 
-	$: hasCompletedOrFailed = $state.downloads.some(
-		(d) => d.state === 'completed' || d.state === 'failed' || d.state === 'cancelled'
+	let hasCompletedOrFailed = $derived(
+		$state.downloads.some(
+			(d) => d.state === 'completed' || d.state === 'failed' || d.state === 'cancelled'
+		)
 	);
 </script>
 
@@ -32,7 +34,7 @@
 		<div class="flex items-center justify-between">
 			<h2 class="card-title text-lg">Downloads</h2>
 			{#if hasCompletedOrFailed}
-				<button class="btn btn-ghost btn-sm" on:click={handleClearCompleted}>
+				<button class="btn btn-ghost btn-sm" onclick={handleClearCompleted}>
 					Clear Finished
 				</button>
 			{/if}
@@ -110,7 +112,7 @@
 									<!-- Copy path button -->
 									<button
 										class="btn btn-ghost btn-sm"
-										on:click={() => download.outputPath && handleCopyPath(download.outputPath)}
+										onclick={() => download.outputPath && handleCopyPath(download.outputPath)}
 										title="Copy file path"
 										aria-label="Copy file path"
 									>
@@ -134,7 +136,7 @@
 								{#if download.state === 'downloading' || download.state === 'fetching' || download.state === 'pending' || download.state === 'muxing'}
 									<button
 										class="btn btn-ghost btn-sm"
-										on:click={() => handleCancel(download.downloadId)}
+										onclick={() => handleCancel(download.downloadId)}
 										title="Cancel download"
 										aria-label="Cancel download"
 									>

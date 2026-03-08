@@ -31,13 +31,15 @@
 	const mediaTypeBadge: Record<MediaType, string> = {
 		[MediaType.Video]: 'badge-primary',
 		[MediaType.Image]: 'badge-secondary',
-		[MediaType.Audio]: 'badge-accent'
+		[MediaType.Audio]: 'badge-accent',
+		[MediaType.Other]: 'badge-neutral'
 	};
 
 	const mediaTypeLabel: Record<MediaType, string> = {
 		[MediaType.Video]: 'Video',
 		[MediaType.Image]: 'Image',
-		[MediaType.Audio]: 'Audio'
+		[MediaType.Audio]: 'Audio',
+		[MediaType.Other]: 'Other'
 	};
 </script>
 

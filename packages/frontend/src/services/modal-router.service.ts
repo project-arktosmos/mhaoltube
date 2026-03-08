@@ -6,7 +6,9 @@ const VALID_NAVBAR_IDS = new Set<NavbarModalId>([
 	'youtube',
 	'youtube-search',
 	'libraries',
-	'settings'
+	'settings',
+	'db',
+	'yt-channels'
 ]);
 
 function parseHash(hash: string): NavbarModalId | null {

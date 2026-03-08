@@ -5,6 +5,8 @@
 	import LibraryModalContent from '$components/libraries/LibraryModalContent.svelte';
 	import SettingsModalContent from '$components/settings/SettingsModalContent.svelte';
 	import YouTubeSearchModalContent from '$components/youtube-search/YouTubeSearchModalContent.svelte';
+	import DbModalContent from '$components/db/DbModalContent.svelte';
+	import YtChannelsModalContent from '$components/yt-channels/YtChannelsModalContent.svelte';
 
 	const routerStore = modalRouterService.store;
 
@@ -12,7 +14,9 @@
 		youtube: 'max-w-6xl',
 		'youtube-search': 'max-w-5xl',
 		libraries: 'max-w-5xl',
-		settings: 'max-w-2xl'
+		settings: 'max-w-2xl',
+		db: 'max-w-6xl',
+		'yt-channels': 'max-w-4xl'
 	};
 
 	let activeId = $derived($routerStore.navbarModal);
@@ -32,5 +36,9 @@
 		<LibraryModalContent />
 	{:else if activeId === 'settings'}
 		<SettingsModalContent />
+	{:else if activeId === 'db'}
+		<DbModalContent />
+	{:else if activeId === 'yt-channels'}
+		<YtChannelsModalContent />
 	{/if}
 </Modal>

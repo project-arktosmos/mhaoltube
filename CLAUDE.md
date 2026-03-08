@@ -4,8 +4,6 @@ This document guides Claude (and developers) on implementing features in this mo
 
 For package-specific conventions, see the `CLAUDE.md` in each package directory:
 - `packages/frontend/CLAUDE.md` — Components, services, adapters, styling
-- `packages/backend/CLAUDE.md` — Rust API modules, AppState, sub-crate dependencies
-- `packages/database/CLAUDE.md` — SQLite schema, repository pattern
 
 ---
 
@@ -15,9 +13,7 @@ For package-specific conventions, see the `CLAUDE.md` in each package directory:
 mhaoltube.git/
 ├── packages/
 │   ├── frontend/                 # SvelteKit 2 app (Vite, port 1531)
-│   ├── backend/                  # Rust Axum server (port 1530)
-│   ├── database/                 # SQLite schema & repositories (better-sqlite3)
-│   ├── tauri/                    # Desktop/mobile wrapper (macOS, Android)
+│   ├── tauri/                    # Desktop/mobile app + Rust Axum backend (port 1530)
 │   └── rust-yt-dlp/              # Rust yt-dlp wrapper
 ├── pnpm-workspace.yaml
 └── package.json                  # Root workspace scripts
@@ -86,16 +82,11 @@ git commit -m "add thumbnail fallback to MediaCard"
 
 When adding a new feature that spans the full stack:
 
-**Database (`packages/database`)**
-- [ ] Add/update table in `src/schema.ts`
-- [ ] Create repository in `src/repositories/`
-- [ ] Export from `src/repositories/index.ts`
-
-**Backend (`packages/backend`)**
+**Backend (`packages/tauri/src-tauri`)**
 - [ ] Create API module in `src/api/{feature}.rs`
 - [ ] Add `pub mod {feature};` to `src/api/mod.rs`
 - [ ] Register route in `build_router()`: `.nest("/api/{feature}", {feature}::router())`
-- [ ] Add any new repos to `AppState`
+- [ ] Add any new repos to `AppState` in `src/lib.rs`
 
 **Frontend (`packages/frontend`)**
 - [ ] Define types in `src/types/{feature}.type.ts`

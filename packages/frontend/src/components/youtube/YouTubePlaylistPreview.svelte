@@ -2,11 +2,11 @@
 	import { youtubeService } from '$services/youtube.service';
 	import { formatDuration } from '$types/youtube.type';
 
-	const state = youtubeService.state;
+	const ytState = youtubeService.state;
 	const settings = youtubeService.store;
 
-	let downloadingAll = false;
-	let downloadingIds = new Set<string>();
+	let downloadingAll = $state(false);
+	let downloadingIds = $state(new Set<string>());
 
 	async function handleDownloadAll() {
 		downloadingAll = true;
@@ -45,7 +45,7 @@
 	}
 </script>
 
-{#if $state.currentPlaylistInfo}
+{#if $ytState.currentPlaylistInfo}
 	<div class="card bg-base-200">
 		<div class="card-body gap-4">
 			<!-- Header -->
@@ -53,23 +53,23 @@
 				<div class="flex-1">
 					<div class="flex items-center gap-2">
 						<span class="badge badge-primary">Playlist</span>
-						<span class="badge badge-ghost">{$state.currentPlaylistInfo.videoCount} videos</span>
+						<span class="badge badge-ghost">{$ytState.currentPlaylistInfo.videoCount} videos</span>
 						<span class="badge badge-ghost"
-							>{getTotalDuration($state.currentPlaylistInfo.videos)}</span
+							>{getTotalDuration($ytState.currentPlaylistInfo.videos)}</span
 						>
 					</div>
 					<h3 class="mt-2 text-lg font-semibold">
-						{$state.currentPlaylistInfo.title}
+						{$ytState.currentPlaylistInfo.title}
 					</h3>
-					{#if $state.currentPlaylistInfo.author}
+					{#if $ytState.currentPlaylistInfo.author}
 						<p class="text-sm text-base-content/60">
-							{$state.currentPlaylistInfo.author}
+							{$ytState.currentPlaylistInfo.author}
 						</p>
 					{/if}
 				</div>
 
 				<div class="flex flex-col gap-2">
-					<button class="btn btn-primary" on:click={handleDownloadAll} disabled={downloadingAll}>
+					<button class="btn btn-primary" onclick={handleDownloadAll} disabled={downloadingAll}>
 						{#if downloadingAll}
 							<span class="loading loading-sm loading-spinner"></span>
 						{:else}
@@ -90,7 +90,7 @@
 						{/if}
 						Download All
 					</button>
-					<button class="btn btn-ghost btn-sm" on:click={handleClear}>Cancel</button>
+					<button class="btn btn-ghost btn-sm" onclick={handleClear}>Cancel</button>
 				</div>
 			</div>
 
@@ -119,7 +119,7 @@
 			<!-- Video list -->
 			<div class="max-h-96 overflow-y-auto">
 				<div class="flex flex-col gap-2">
-					{#each $state.currentPlaylistInfo.videos as video (video.index)}
+					{#each $ytState.currentPlaylistInfo.videos as video (video.index)}
 						<div class="flex items-center gap-3 rounded-lg bg-base-300 p-2">
 							<!-- Index -->
 							<span class="w-8 text-center text-sm text-base-content/50">
@@ -171,7 +171,7 @@
 							<!-- Download button -->
 							<button
 								class="btn btn-square btn-ghost btn-sm"
-								on:click={() => handleDownloadSingle(video.videoId, video.title)}
+								onclick={() => handleDownloadSingle(video.videoId, video.title)}
 								disabled={downloadingIds.has(video.videoId)}
 								title="Download this video"
 							>

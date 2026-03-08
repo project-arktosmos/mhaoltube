@@ -2,11 +2,15 @@
 	import { _ } from 'svelte-i18n';
 </script>
 
-<section class="hero min-h-[80vh]">
-	<div class="hero-content flex-col text-center">
+<section
+	class="hero min-h-[80vh] bg-cover bg-center bg-no-repeat"
+	style:background-image="url('/pexels-enginakyurt-1493226.jpg')"
+>
+	<div class="hero-overlay bg-black/50"></div>
+	<div class="hero-content flex-col text-center text-white">
 		<div class="max-w-2xl">
 			<h1 class="text-5xl font-bold sm:text-6xl lg:text-7xl">{$_('hero.title')}</h1>
-			<p class="py-8 text-lg text-base-content/70 sm:text-xl">{$_('hero.subtitle')}</p>
+			<p class="py-8 text-lg text-white/70 sm:text-xl">{$_('hero.subtitle')}</p>
 			<div class="flex flex-col justify-center gap-4 sm:flex-row">
 				<a
 					href="https://github.com/arktosmos/mhaoltube/releases"
