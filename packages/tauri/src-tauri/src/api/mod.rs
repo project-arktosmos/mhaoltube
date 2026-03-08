@@ -4,7 +4,6 @@ pub mod database;
 pub mod downloads;
 pub mod libraries;
 pub mod media;
-pub mod media_lists;
 pub mod youtube;
 pub mod youtube_search;
 #[cfg(not(target_os = "android"))]
@@ -24,7 +23,6 @@ pub fn build_router(state: AppState) -> Router {
     let router = Router::new()
         .nest("/api/libraries", libraries::router())
         .nest("/api/media", media::router())
-        .nest("/api/media-lists", media_lists::router())
         .nest("/api/downloads", downloads::router())
         .nest("/api/database", database::router())
         .nest("/api/youtube", youtube::router())

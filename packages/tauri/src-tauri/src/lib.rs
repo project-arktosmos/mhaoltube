@@ -63,15 +63,8 @@ pub struct AppState {
     pub settings: SettingsRepo,
     pub metadata: MetadataRepo,
     pub libraries: LibraryRepo,
-    pub library_items: LibraryItemRepo,
-    pub library_item_links: LibraryItemLinkRepo,
-    pub media_types: MediaTypeRepo,
-    pub categories: CategoryRepo,
-    pub link_sources: LinkSourceRepo,
+    pub youtube_content: YouTubeContentRepo,
     pub youtube_downloads: YouTubeDownloadRepo,
-    pub media_lists: MediaListRepo,
-    pub media_list_items: MediaListItemRepo,
-    pub media_list_links: MediaListLinkRepo,
     pub youtube_channels: YouTubeChannelRepo,
     pub module_registry: Arc<RwLock<ModuleRegistry>>,
     #[cfg(not(target_os = "android"))]
@@ -87,15 +80,8 @@ impl AppState {
             settings: SettingsRepo::new(Arc::clone(&db)),
             metadata: MetadataRepo::new(Arc::clone(&db)),
             libraries: LibraryRepo::new(Arc::clone(&db)),
-            library_items: LibraryItemRepo::new(Arc::clone(&db)),
-            library_item_links: LibraryItemLinkRepo::new(Arc::clone(&db)),
-            media_types: MediaTypeRepo::new(Arc::clone(&db)),
-            categories: CategoryRepo::new(Arc::clone(&db)),
-            link_sources: LinkSourceRepo::new(Arc::clone(&db)),
+            youtube_content: YouTubeContentRepo::new(Arc::clone(&db)),
             youtube_downloads: YouTubeDownloadRepo::new(Arc::clone(&db)),
-            media_lists: MediaListRepo::new(Arc::clone(&db)),
-            media_list_items: MediaListItemRepo::new(Arc::clone(&db)),
-            media_list_links: MediaListLinkRepo::new(Arc::clone(&db)),
             youtube_channels: YouTubeChannelRepo::new(Arc::clone(&db)),
             module_registry: Arc::new(RwLock::new(ModuleRegistry::new())),
             #[cfg(not(target_os = "android"))]
@@ -141,13 +127,14 @@ impl AppState {
             Self::DEFAULT_LIBRARY_ID,
             "Library",
             &library_path_str,
-            "[\"video\",\"image\",\"audio\",\"other\"]",
             chrono::Utc::now().timestamp_millis(),
         );
         self.metadata
             .set_string("youtube.libraryId", Self::DEFAULT_LIBRARY_ID);
-        self.metadata
-            .set_string("torrent.libraryId", Self::DEFAULT_LIBRARY_ID);
+        for subdir in &["audio", "video"] {
+            let dir = library_path.join(subdir);
+            std::fs::create_dir_all(dir.join(".cache")).ok();
+        }
         tracing::info!("Created default library at {}", library_path_str);
     }
 }

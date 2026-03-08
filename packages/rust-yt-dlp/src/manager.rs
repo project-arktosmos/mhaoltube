@@ -70,7 +70,7 @@ impl DownloadManager {
         let config = self.config.read();
         let download_id = uuid::Uuid::new_v4().to_string();
 
-        let mode = request.mode.unwrap_or(DownloadMode::Audio);
+        let mode = request.mode.unwrap_or(DownloadMode::Both);
         let quality = request.quality.unwrap_or(config.default_quality.clone());
         let format = request.format.unwrap_or(config.default_format.clone());
 
@@ -84,6 +84,8 @@ impl DownloadManager {
             downloaded_bytes: 0,
             total_bytes: 0,
             output_path: None,
+            video_output_path: None,
+            audio_output_path: None,
             error: None,
             mode: mode.clone(),
             quality: quality.clone(),
@@ -113,6 +115,8 @@ impl DownloadManager {
             video_quality: request.video_quality,
             video_format: request.video_format,
             output_dir: config.output_path.clone(),
+            video_output_dir: request.video_output_dir,
+            audio_output_dir: request.audio_output_dir,
             po_token: config.po_token.clone(),
             visitor_data: config.visitor_data.clone(),
         };
@@ -124,7 +128,7 @@ impl DownloadManager {
     /// Queue multiple downloads from a playlist.
     pub fn queue_playlist(&self, request: QueuePlaylistRequest) -> Vec<String> {
         let config = self.config.read();
-        let mode = request.mode.unwrap_or(DownloadMode::Audio);
+        let mode = request.mode.unwrap_or(DownloadMode::Both);
         let quality = request.quality.unwrap_or(config.default_quality.clone());
         let format = request.format.unwrap_or(config.default_format.clone());
         let output_path = config.output_path.clone();
@@ -147,6 +151,8 @@ impl DownloadManager {
                 downloaded_bytes: 0,
                 total_bytes: 0,
                 output_path: None,
+                video_output_path: None,
+                audio_output_path: None,
                 error: None,
                 mode: mode.clone(),
                 quality: quality.clone(),
@@ -175,6 +181,8 @@ impl DownloadManager {
                 video_quality: request.video_quality.clone(),
                 video_format: request.video_format.clone(),
                 output_dir: output_path.clone(),
+                video_output_dir: request.video_output_dir.clone(),
+                audio_output_dir: request.audio_output_dir.clone(),
                 po_token: po_token.clone(),
                 visitor_data: visitor_data.clone(),
             };
@@ -358,10 +366,12 @@ impl DownloadManager {
                         PipelineState::Muxing => {
                             progress.state = DownloadState::Muxing;
                         }
-                        PipelineState::Completed { output_path } => {
+                        PipelineState::Completed { output } => {
                             progress.state = DownloadState::Completed;
                             progress.progress = 1.0;
-                            progress.output_path = Some(output_path.clone());
+                            progress.output_path = Some(output.output_path.clone());
+                            progress.video_output_path = output.video_output_path.clone();
+                            progress.audio_output_path = output.audio_output_path.clone();
                         }
                         PipelineState::Failed { error } => {
                             progress.state = DownloadState::Failed;
@@ -389,10 +399,12 @@ impl DownloadManager {
 
             if let Some(progress) = map.get_mut(&dl_id) {
                 match result {
-                    Ok(output_path) => {
+                    Ok(output) => {
                         progress.state = DownloadState::Completed;
                         progress.progress = 1.0;
-                        progress.output_path = Some(output_path);
+                        progress.output_path = Some(output.output_path);
+                        progress.video_output_path = output.video_output_path;
+                        progress.audio_output_path = output.audio_output_path;
                     }
                     Err(e) => {
                         if progress.state != DownloadState::Cancelled {

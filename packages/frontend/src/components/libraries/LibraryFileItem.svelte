@@ -1,147 +1,48 @@
 <script lang="ts">
-	import classNames from 'classnames';
-	import type { LibraryFile } from '$types/library.type';
-	import { libraryFileAdapter } from '$adapters/classes/library-file.adapter';
+	import type { YouTubeContent } from '$types/youtube.type';
+	import { formatDuration } from '$types/youtube.type';
+	import { libraryService } from '$services/library.service';
 
 	interface Props {
-		file: LibraryFile;
-		onyoutubelink: (file: LibraryFile, youtubeId: string) => void;
-		onyoutubeunlink: (file: LibraryFile) => void;
-		onyoutubepreview: (file: LibraryFile) => void;
-		onedittype: (file: LibraryFile) => void;
+		item: YouTubeContent;
 	}
 
-	let { file, onyoutubelink, onyoutubeunlink, onyoutubepreview, onedittype }: Props = $props();
+	let { item }: Props = $props();
 
-	let editingYoutube = $state(false);
-	let youtubeInput = $state('');
-
-	function startYoutubeEdit() {
-		youtubeInput = '';
-		editingYoutube = true;
-	}
-
-	function submitYoutubeId() {
-		const trimmed = youtubeInput.trim();
-		if (trimmed) {
-			onyoutubelink(file, trimmed);
-		}
-		editingYoutube = false;
-	}
-
-	function cancelYoutubeEdit() {
-		editingYoutube = false;
-	}
-
-	function handleYoutubeKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			submitYoutubeId();
-		} else if (event.key === 'Escape') {
-			cancelYoutubeEdit();
-		}
-	}
+	let videoUrl = $derived(libraryService.streamVideoUrl(item.youtubeId));
+	let audioUrl = $derived(libraryService.streamAudioUrl(item.youtubeId));
 </script>
 
 <tr class="hover">
-	<td class="max-w-0">
-		<span class="block truncate" title={file.path}>{file.name}</span>
-	</td>
-	<td>
-		<button
-			class="btn px-0 btn-ghost btn-xs"
-			title="Edit type & category"
-			onclick={() => onedittype(file)}
-		>
-			<span
-				class={classNames(
-					'badge badge-xs',
-					libraryFileAdapter.getMediaTypeBadgeClass(file.mediaType)
-				)}
-			>
-				{libraryFileAdapter.getMediaTypeLabel(file.mediaType)}
-			</span>
-		</button>
-	</td>
-	<td>
-		{#if file.categoryId}
-			<button
-				class="btn px-0 btn-ghost btn-xs"
-				title="Edit type & category"
-				onclick={() => onedittype(file)}
-			>
-				<span
-					class={classNames(
-						'badge badge-xs',
-						libraryFileAdapter.getCategoryBadgeClass(file.categoryId)
-					)}
-				>
-					{libraryFileAdapter.getCategoryLabel(file.categoryId)}
-				</span>
-			</button>
+	<td class="w-12">
+		{#if item.thumbnailUrl}
+			<img
+				src={item.thumbnailUrl}
+				alt={item.title}
+				class="h-8 w-12 rounded object-cover"
+				loading="lazy"
+			/>
 		{:else}
-			<button
-				class="btn px-1 opacity-40 btn-ghost btn-xs hover:opacity-100"
-				title="Set category"
-				onclick={() => onedittype(file)}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-3.5 w-3.5"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-					/>
-				</svg>
-			</button>
+			<div class="h-8 w-12 rounded bg-base-300"></div>
 		{/if}
 	</td>
-	<td>
-		<span class="uppercase opacity-60">{file.extension}</span>
+	<td class="max-w-xs">
+		<span class="block truncate text-sm font-medium" title={item.title}>{item.title}</span>
+		{#if item.channelName}
+			<span class="block truncate text-xs opacity-50">{item.channelName}</span>
+		{/if}
 	</td>
-	<td>
-		{#if file.mediaType === 'video' || file.mediaType === 'audio'}
-			{#if editingYoutube}
-				<div class="flex items-center gap-1">
-					<input
-						type="text"
-						class="input-bordered input input-xs w-24"
-						placeholder="Video ID"
-						bind:value={youtubeInput}
-						onkeydown={handleYoutubeKeydown}
-						onblur={cancelYoutubeEdit}
-					/>
-				</div>
-			{:else if file.links.youtube}
-				<div class="flex items-center gap-1">
-					<button
-						class="btn px-0 btn-ghost btn-xs"
-						title="Preview YouTube video"
-						onclick={() => onyoutubepreview(file)}
-					>
-						<span class="badge badge-xs badge-secondary" title={file.links.youtube.serviceId}
-							>{file.links.youtube.serviceId}</span
-						>
-					</button>
-					<button
-						class="btn px-1 opacity-40 btn-ghost btn-xs hover:text-error hover:opacity-100"
-						title="Remove YouTube ID"
-						onclick={() => onyoutubeunlink(file)}
-					>
-						&times;
-					</button>
-				</div>
-			{:else}
-				<button
-					class="btn px-1 opacity-40 btn-ghost btn-xs hover:opacity-100"
-					title="Set YouTube ID"
-					onclick={startYoutubeEdit}
-				>
+	<td class="w-20 text-xs opacity-60">
+		{#if item.durationSeconds}
+			{formatDuration(item.durationSeconds)}
+		{:else}
+			—
+		{/if}
+	</td>
+	<td class="w-24">
+		<div class="flex gap-1">
+			{#if item.hasVideo}
+				<a href={videoUrl} target="_blank" class="btn btn-ghost btn-xs" title="Play video">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						class="h-3.5 w-3.5"
@@ -153,13 +54,29 @@
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
-							d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+							d="M15 10l4.553-2.277A1 1 0 0121 8.677v6.646a1 1 0 01-1.447.894L15 14M4 6h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2z"
 						/>
 					</svg>
-				</button>
+				</a>
 			{/if}
-		{:else}
-			<span class="opacity-30">—</span>
-		{/if}
+			{#if item.hasAudio}
+				<a href={audioUrl} target="_blank" class="btn btn-ghost btn-xs" title="Play audio">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-3.5 w-3.5"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+						/>
+					</svg>
+				</a>
+			{/if}
+		</div>
 	</td>
 </tr>

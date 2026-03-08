@@ -27,7 +27,7 @@ pub fn select_formats(
 ) -> Result<SelectedFormats, YtDlpError> {
     match mode {
         DownloadMode::Audio => select_audio_format(formats, audio_quality, audio_format, has_po_token),
-        DownloadMode::Video => select_video_formats(
+        DownloadMode::Video | DownloadMode::Both => select_video_formats(
             formats,
             video_quality.unwrap_or(&VideoQuality::Best),
             video_format.unwrap_or(&VideoFormat::Mp4),

@@ -1,0 +1,211 @@
+use crate::db::DbPool;
+use rusqlite::params;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YouTubeContentRow {
+    pub youtube_id: String,
+    pub title: String,
+    pub thumbnail_url: Option<String>,
+    pub duration_seconds: Option<i64>,
+    pub channel_name: Option<String>,
+    pub channel_id: Option<String>,
+    pub video_path: Option<String>,
+    pub audio_path: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone)]
+pub struct YouTubeContentRepo {
+    db: DbPool,
+}
+
+impl YouTubeContentRepo {
+    pub fn new(db: DbPool) -> Self {
+        Self { db }
+    }
+
+    pub fn get(&self, youtube_id: &str) -> Option<YouTubeContentRow> {
+        let conn = self.db.lock();
+        conn.query_row(
+            "SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content WHERE youtube_id = ?1",
+            params![youtube_id],
+            Self::row_mapper,
+        )
+        .ok()
+    }
+
+    pub fn get_all(&self) -> Vec<YouTubeContentRow> {
+        let conn = self.db.lock();
+        let mut stmt = conn
+            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content ORDER BY created_at DESC")
+            .unwrap();
+        stmt.query_map([], Self::row_mapper)
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
+    pub fn get_by_channel(&self, channel_id: &str) -> Vec<YouTubeContentRow> {
+        let conn = self.db.lock();
+        let mut stmt = conn
+            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content WHERE channel_id = ?1 ORDER BY created_at DESC")
+            .unwrap();
+        stmt.query_map(params![channel_id], Self::row_mapper)
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
+    pub fn upsert(
+        &self,
+        youtube_id: &str,
+        title: &str,
+        thumbnail_url: Option<&str>,
+        duration_seconds: Option<i64>,
+        channel_name: Option<&str>,
+        channel_id: Option<&str>,
+        video_path: Option<&str>,
+        audio_path: Option<&str>,
+    ) {
+        let conn = self.db.lock();
+        conn.execute(
+            "INSERT INTO youtube_content (youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(youtube_id) DO UPDATE SET
+                title = excluded.title,
+                thumbnail_url = COALESCE(excluded.thumbnail_url, youtube_content.thumbnail_url),
+                duration_seconds = COALESCE(excluded.duration_seconds, youtube_content.duration_seconds),
+                channel_name = COALESCE(excluded.channel_name, youtube_content.channel_name),
+                channel_id = COALESCE(excluded.channel_id, youtube_content.channel_id),
+                video_path = COALESCE(excluded.video_path, youtube_content.video_path),
+                audio_path = COALESCE(excluded.audio_path, youtube_content.audio_path)",
+            params![youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path],
+        )
+        .unwrap();
+    }
+
+    pub fn update_video_path(&self, youtube_id: &str, path: &str) {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET video_path = ?2 WHERE youtube_id = ?1",
+            params![youtube_id, path],
+        )
+        .unwrap();
+    }
+
+    pub fn update_audio_path(&self, youtube_id: &str, path: &str) {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET audio_path = ?2 WHERE youtube_id = ?1",
+            params![youtube_id, path],
+        )
+        .unwrap();
+    }
+
+    pub fn delete(&self, youtube_id: &str) {
+        let conn = self.db.lock();
+        conn.execute(
+            "DELETE FROM youtube_content WHERE youtube_id = ?1",
+            params![youtube_id],
+        )
+        .unwrap();
+    }
+
+    fn row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<YouTubeContentRow> {
+        Ok(YouTubeContentRow {
+            youtube_id: row.get(0)?,
+            title: row.get(1)?,
+            thumbnail_url: row.get(2)?,
+            duration_seconds: row.get(3)?,
+            channel_name: row.get(4)?,
+            channel_id: row.get(5)?,
+            video_path: row.get(6)?,
+            audio_path: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::open_test_database;
+
+    #[test]
+    fn test_upsert_and_get() {
+        let db = open_test_database();
+        let repo = YouTubeContentRepo::new(db);
+
+        repo.upsert(
+            "dQw4w9WgXcQ",
+            "Never Gonna Give You Up",
+            Some("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"),
+            Some(212),
+            Some("Rick Astley"),
+            Some("UCuAXFkgsw1L7xaCfnd5JJOw"),
+            None,
+            None,
+        );
+
+        let row = repo.get("dQw4w9WgXcQ").unwrap();
+        assert_eq!(row.title, "Never Gonna Give You Up");
+        assert_eq!(row.channel_name.as_deref(), Some("Rick Astley"));
+        assert!(row.video_path.is_none());
+        assert!(row.audio_path.is_none());
+    }
+
+    #[test]
+    fn test_upsert_preserves_paths() {
+        let db = open_test_database();
+        let repo = YouTubeContentRepo::new(db);
+
+        repo.upsert("abc123", "Test", None, None, None, None, Some("/video/abc123.mp4"), None);
+        repo.upsert("abc123", "Test Updated", None, None, None, None, None, Some("/audio/abc123.opus"));
+
+        let row = repo.get("abc123").unwrap();
+        assert_eq!(row.title, "Test Updated");
+        assert_eq!(row.video_path.as_deref(), Some("/video/abc123.mp4"));
+        assert_eq!(row.audio_path.as_deref(), Some("/audio/abc123.opus"));
+    }
+
+    #[test]
+    fn test_update_paths() {
+        let db = open_test_database();
+        let repo = YouTubeContentRepo::new(db);
+
+        repo.upsert("xyz789", "Test", None, None, None, None, None, None);
+        repo.update_video_path("xyz789", "/video/xyz789.mp4");
+        repo.update_audio_path("xyz789", "/audio/xyz789.opus");
+
+        let row = repo.get("xyz789").unwrap();
+        assert_eq!(row.video_path.as_deref(), Some("/video/xyz789.mp4"));
+        assert_eq!(row.audio_path.as_deref(), Some("/audio/xyz789.opus"));
+    }
+
+    #[test]
+    fn test_delete() {
+        let db = open_test_database();
+        let repo = YouTubeContentRepo::new(db);
+
+        repo.upsert("del123", "To Delete", None, None, None, None, None, None);
+        assert!(repo.get("del123").is_some());
+
+        repo.delete("del123");
+        assert!(repo.get("del123").is_none());
+    }
+
+    #[test]
+    fn test_get_all() {
+        let db = open_test_database();
+        let repo = YouTubeContentRepo::new(db);
+
+        repo.upsert("vid1", "First", None, None, None, None, None, None);
+        repo.upsert("vid2", "Second", None, None, None, None, None, None);
+
+        let all = repo.get_all();
+        assert_eq!(all.len(), 2);
+    }
+}

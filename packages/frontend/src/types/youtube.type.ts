@@ -35,7 +35,14 @@ export const AUDIO_FORMAT_OPTIONS: { value: AudioFormat; label: string; extensio
 
 // ===== Download Mode =====
 
-export type DownloadMode = 'audio' | 'video';
+export type DownloadMode = 'audio' | 'video' | 'both';
+
+export const DOWNLOAD_MODE_OPTIONS: { value: DownloadMode; label: string; description: string }[] =
+	[
+		{ value: 'both', label: 'Both', description: 'Download audio and video' },
+		{ value: 'audio', label: 'Audio only', description: 'Download audio track only' },
+		{ value: 'video', label: 'Video only', description: 'Download video with audio' }
+	];
 
 // ===== Video Quality =====
 
@@ -71,6 +78,8 @@ export interface YouTubeDownloadProgress {
 	downloadedBytes: number;
 	totalBytes: number;
 	outputPath: string | null;
+	videoOutputPath: string | null;
+	audioOutputPath: string | null;
 	error: string | null;
 	mode: DownloadMode;
 	quality: AudioQuality;
@@ -132,7 +141,6 @@ export interface YouTubeServiceState {
 	initialized: boolean;
 	loading: boolean;
 	error: string | null;
-	libraryId: string;
 	downloads: YouTubeDownloadProgress[];
 	stats: YouTubeManagerStats | null;
 	downloaderStatus: DownloaderStatus | null;
@@ -145,6 +153,20 @@ export interface YouTubeServiceState {
 	fetchingPlaylistInfo: boolean;
 }
 
+// ===== YouTube Content (downloaded media) =====
+
+export interface YouTubeContent {
+	youtubeId: string;
+	title: string;
+	thumbnailUrl: string | null;
+	durationSeconds: number | null;
+	channelName: string | null;
+	channelId: string | null;
+	hasVideo: boolean;
+	hasAudio: boolean;
+	createdAt: string;
+}
+
 // ===== Settings (database) =====
 
 export interface YouTubeSettings {
@@ -154,7 +176,6 @@ export interface YouTubeSettings {
 	defaultFormat: AudioFormat;
 	defaultVideoQuality: VideoQuality;
 	defaultVideoFormat: VideoFormat;
-	libraryId: string;
 	poToken: string;
 	cookies: string;
 }

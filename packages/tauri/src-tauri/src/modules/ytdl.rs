@@ -30,7 +30,7 @@ impl Module for YtdlModule {
             settings: vec![
                 ModuleSettingDef {
                     key: "ytdl.downloadMode".to_string(),
-                    default: "audio".to_string(),
+                    default: "both".to_string(),
                     env_key: None,
                 },
                 ModuleSettingDef {

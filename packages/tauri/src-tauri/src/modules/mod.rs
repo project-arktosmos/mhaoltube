@@ -180,20 +180,7 @@ impl ModuleRegistry {
                 }
             }
 
-            // 3. Register link sources
-            for ls in &manifest.link_sources {
-                let row = crate::db::repo::link_source::LinkSourceRow {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    plugin: manifest.name.clone(),
-                    service: ls.service.clone(),
-                    label: ls.label.clone(),
-                    media_type_id: ls.media_type_id.clone(),
-                    category_id: ls.category_id.clone(),
-                };
-                state.link_sources.upsert(&row);
-            }
-
-            // 4. Call module-specific initialize
+            // 3. Call module-specific initialize
             if let Err(e) = module.initialize(state) {
                 tracing::error!("{} Initialize failed: {}", log_prefix, e);
             }

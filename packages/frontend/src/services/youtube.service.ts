@@ -1,6 +1,7 @@
 import { writable, get, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { apiUrl } from '$lib/api-base';
+import { libraryService } from '$services/library.service';
 import {
 	extractVideoId,
 	type YouTubeSettings,
@@ -23,12 +24,11 @@ const API_PREFIX = '/api/ytdl';
 // Default settings (used before server fetch completes)
 const initialSettings: YouTubeSettings = {
 	id: 'youtube-settings',
-	downloadMode: 'audio',
+	downloadMode: 'both',
 	defaultQuality: 'best',
 	defaultFormat: 'aac',
 	defaultVideoQuality: 'best',
 	defaultVideoFormat: 'mp4',
-	libraryId: '',
 	poToken: '',
 	cookies: ''
 };
@@ -38,7 +38,6 @@ const initialState: YouTubeServiceState = {
 	initialized: false,
 	loading: false,
 	error: null,
-	libraryId: '',
 	downloads: [],
 	stats: null,
 	downloaderStatus: null,
@@ -87,7 +86,6 @@ class YouTubeService {
 				...s,
 				initialized: true,
 				loading: false,
-				libraryId: settings.libraryId,
 				stats,
 				downloaderStatus,
 				error: null
@@ -311,7 +309,7 @@ class YouTubeService {
 			format: settings.defaultFormat
 		};
 
-		if (settings.downloadMode === 'video') {
+		if (settings.downloadMode === 'video' || settings.downloadMode === 'both') {
 			body.videoQuality = settings.defaultVideoQuality;
 			body.videoFormat = settings.defaultVideoFormat;
 		}
@@ -351,7 +349,7 @@ class YouTubeService {
 			format: settings.defaultFormat
 		};
 
-		if (settings.downloadMode === 'video') {
+		if (settings.downloadMode === 'video' || settings.downloadMode === 'both') {
 			body.videoQuality = settings.defaultVideoQuality;
 			body.videoFormat = settings.defaultVideoFormat;
 		}
@@ -403,10 +401,6 @@ class YouTubeService {
 				method: 'PUT',
 				body: JSON.stringify(payload)
 			});
-
-			if (updates.libraryId !== undefined) {
-				this.state.update((s) => ({ ...s, libraryId: updates.libraryId! }));
-			}
 		} catch (error) {
 			// Revert on failure
 			this.store.set(current);
@@ -436,10 +430,6 @@ class YouTubeService {
 
 	setDefaultVideoFormat(format: VideoFormat): void {
 		this.updateSettings({ defaultVideoFormat: format });
-	}
-
-	setLibrary(libraryId: string): void {
-		this.updateSettings({ libraryId });
 	}
 
 	// ===== Getters =====
@@ -521,6 +511,9 @@ class YouTubeService {
 					}
 					return { ...s, downloads };
 				});
+				if (progress.state === 'completed') {
+					libraryService.fetchContent();
+				}
 			} catch {
 				// ignore parse errors
 			}
