@@ -86,6 +86,12 @@ pub struct QueueDownloadRequest {
     pub video_output_dir: Option<String>,
     #[serde(default)]
     pub audio_output_dir: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
+    #[serde(default)]
+    pub channel_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,6 +141,7 @@ pub struct DownloadProgress {
     pub video_format: Option<VideoFormat>,
     pub thumbnail_url: Option<String>,
     pub duration_seconds: Option<f64>,
+    pub channel_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

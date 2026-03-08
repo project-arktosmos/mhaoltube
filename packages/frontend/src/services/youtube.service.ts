@@ -231,7 +231,10 @@ class YouTubeService {
 				title: videoInfo?.title || 'Unknown',
 				mode: settings.downloadMode,
 				quality: settings.defaultQuality,
-				format: settings.defaultFormat
+				format: settings.defaultFormat,
+				thumbnailUrl: videoInfo?.thumbnailUrl ?? null,
+				durationSeconds: videoInfo?.duration ?? null,
+				channelName: videoInfo?.uploader ?? null
 			};
 
 			if (settings.downloadMode === 'video') {

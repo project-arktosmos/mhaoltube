@@ -92,8 +92,9 @@ impl DownloadManager {
             format: format.clone(),
             video_quality: request.video_quality.clone(),
             video_format: request.video_format.clone(),
-            thumbnail_url: None,
-            duration_seconds: None,
+            thumbnail_url: request.thumbnail_url.clone(),
+            duration_seconds: request.duration_seconds,
+            channel_name: request.channel_name.clone(),
         };
 
         {
@@ -161,6 +162,7 @@ impl DownloadManager {
                 video_format: request.video_format.clone(),
                 thumbnail_url: None,
                 duration_seconds: None,
+                channel_name: None,
             };
 
             {

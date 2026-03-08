@@ -109,8 +109,8 @@ async fn queue_download(
             .unwrap_or("\"Opus\""),
         None,
         None,
-        None,
-        None,
+        body.thumbnail_url.as_deref(),
+        body.duration_seconds.map(|d| d as i64),
     );
 
     (
@@ -221,7 +221,7 @@ async fn download_events(
                             &progress.title,
                             progress.thumbnail_url.as_deref(),
                             progress.duration_seconds.map(|d| d as i64),
-                            None,
+                            progress.channel_name.as_deref(),
                             None,
                             progress.video_output_path.as_deref(),
                             progress.audio_output_path.as_deref(),
