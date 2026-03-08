@@ -22,7 +22,9 @@
 		"tauri:build": "pnpm -r --filter tauri build",
 		"dev:android": "pnpm -r --filter tauri android:dev",
 		"tauri:android:dev": "pnpm -r --filter tauri tauri android dev",
+		"build:android": "pnpm -r --filter tauri tauri android build --apk",
 		"tauri:android:build": "pnpm -r --filter tauri tauri android build --apk",
+		"setup:android:keystore": "keytool -genkey -v -keystore packages/tauri/src-tauri/gen/android/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass android -keypass android -dname 'CN=Mhaoltube Dev, O=Arktosmos, C=US' && printf 'storeFile=%s/packages/tauri/src-tauri/gen/android/upload-keystore.jks\\nkeyAlias=upload\\npassword=android\\n' \"$(pwd)\" > packages/tauri/src-tauri/gen/android/keystore.properties && echo 'keystore.properties created'",
 		"install:deps": "sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev"
 	},
 	"engines": {

@@ -47,7 +47,10 @@ pnpm format           # Prettier write
 pnpm tauri:dev        # Tauri dev mode
 pnpm tauri:build      # Tauri desktop build
 pnpm dev:android      # Tauri Android dev
-pnpm tauri:android:build  # Build Android APK
+pnpm build:android    # Build signed release APK
+
+# Android signing setup (first time only — generates a local debug keystore)
+pnpm setup:android:keystore
 
 # Cleanup
 pnpm clean            # Clean build artifacts + cargo clean
