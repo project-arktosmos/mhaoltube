@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { apiUrl } from '$lib/api-base';
-	import type { YouTubeChannelFeedVideo, YouTubeChannelFeedResponse } from '$types/youtube.type';
+	import type { YouTubeRssVideo, YouTubeRssFeedResponse } from '$types/youtube.type';
 
 	interface YouTubeChannel {
 		id: string;
@@ -29,11 +29,9 @@
 
 	// Feed drill-down state
 	let selectedChannel = $state<YouTubeChannel | null>(null);
-	let feedVideos: YouTubeChannelFeedVideo[] = $state([]);
+	let feedVideos: YouTubeRssVideo[] = $state([]);
 	let feedLoading = $state(false);
 	let feedError = $state<string | null>(null);
-	let feedContinuation = $state<string | null>(null);
-	let feedLoadingMore = $state(false);
 
 	async function fetchChannels(page: number = 1) {
 		loading = true;
@@ -53,18 +51,16 @@
 		}
 	}
 
-	async function fetchChannelFeed(channel: YouTubeChannel) {
+	async function fetchChannelRss(channel: YouTubeChannel) {
 		selectedChannel = channel;
 		feedLoading = true;
 		feedError = null;
 		feedVideos = [];
-		feedContinuation = null;
 		try {
-			const res = await fetch(apiUrl(`/api/youtube/channel-feed?channelId=${channel.id}`));
+			const res = await fetch(apiUrl(`/api/youtube/channel-rss?channelId=${channel.id}`));
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data: YouTubeChannelFeedResponse = await res.json();
+			const data: YouTubeRssFeedResponse = await res.json();
 			feedVideos = data.videos;
-			feedContinuation = data.continuation;
 		} catch (e) {
 			feedError = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -72,31 +68,10 @@
 		}
 	}
 
-	async function loadMoreVideos() {
-		if (!selectedChannel || !feedContinuation || feedLoadingMore) return;
-		feedLoadingMore = true;
-		try {
-			const params = new URLSearchParams({
-				channelId: selectedChannel.id,
-				continuation: feedContinuation
-			});
-			const res = await fetch(apiUrl(`/api/youtube/channel-feed?${params}`));
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data: YouTubeChannelFeedResponse = await res.json();
-			feedVideos = [...feedVideos, ...data.videos];
-			feedContinuation = data.continuation;
-		} catch (e) {
-			feedError = e instanceof Error ? e.message : String(e);
-		} finally {
-			feedLoadingMore = false;
-		}
-	}
-
 	function goBack() {
 		selectedChannel = null;
 		feedVideos = [];
 		feedError = null;
-		feedContinuation = null;
 	}
 
 	$effect(() => {
@@ -123,7 +98,7 @@
 			Back
 		</button>
 		<h3 class="mt-2 text-lg font-bold">{selectedChannel.name}</h3>
-		<p class="text-sm text-base-content/60">@{selectedChannel.handle} — Latest videos</p>
+		<p class="text-sm text-base-content/60">@{selectedChannel.handle} — Latest videos (RSS)</p>
 	</div>
 
 	{#if feedError}
@@ -150,18 +125,13 @@
 					rel="noopener noreferrer"
 					class="flex gap-3 rounded-lg bg-base-200 p-3 transition-colors hover:bg-base-300"
 				>
-					<div class="relative shrink-0">
+					<div class="shrink-0">
 						<img
-							src={video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`}
+							src={video.thumbnail}
 							alt={video.title}
 							class="h-20 w-36 rounded-md object-cover"
 							loading="lazy"
 						/>
-						{#if video.durationText}
-							<span class="absolute right-1 bottom-1 rounded bg-black/80 px-1 text-xs text-white">
-								{video.durationText}
-							</span>
-						{/if}
 					</div>
 					<div class="min-w-0 flex-1">
 						<p class="line-clamp-2 font-medium">{video.title}</p>
@@ -175,18 +145,6 @@
 				</a>
 			{/each}
 		</div>
-
-		{#if feedContinuation}
-			<div class="mt-3 flex justify-center">
-				<button class="btn btn-ghost btn-sm" disabled={feedLoadingMore} onclick={loadMoreVideos}>
-					{#if feedLoadingMore}
-						<span class="loading loading-sm loading-spinner"></span>
-					{:else}
-						Load more
-					{/if}
-				</button>
-			</div>
-		{/if}
 	{/if}
 {:else}
 	<!-- Channel grid view -->
@@ -216,7 +174,7 @@
 		<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
 			{#each channels as channel (channel.id)}
 				<button
-					onclick={() => fetchChannelFeed(channel)}
+					onclick={() => fetchChannelRss(channel)}
 					class="flex items-center gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
 				>
 					<div

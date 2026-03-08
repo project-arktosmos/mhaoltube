@@ -267,6 +267,24 @@ export interface YouTubeChannelFeedResponse {
 	continuation: string | null;
 }
 
+// ===== Channel RSS Feed =====
+
+export interface YouTubeRssVideo {
+	videoId: string;
+	title: string;
+	published: string;
+	publishedText: string;
+	thumbnail: string;
+	views: number;
+	viewsText: string;
+}
+
+export interface YouTubeRssFeedResponse {
+	channelId: string;
+	channelName: string;
+	videos: YouTubeRssVideo[];
+}
+
 // ===== oEmbed Metadata =====
 
 export interface YouTubeOEmbedData {

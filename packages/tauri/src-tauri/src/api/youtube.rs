@@ -13,6 +13,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/oembed", get(oembed))
         .route("/channel-feed", get(channel_feed))
+        .route("/channel-rss", get(channel_rss))
 }
 
 /// Fetch YouTube oEmbed data for a video ID, using the cache if available.
@@ -341,4 +342,245 @@ fn parse_view_count_text(text: &str) -> i64 {
         .replace(" view", "")
         .replace(',', "");
     cleaned.parse().unwrap_or(0)
+}
+
+// ===== Channel RSS Feed =====
+
+#[derive(Serialize)]
+struct RssVideo {
+    #[serde(rename = "videoId")]
+    video_id: String,
+    title: String,
+    published: String,
+    #[serde(rename = "publishedText")]
+    published_text: String,
+    thumbnail: String,
+    views: i64,
+    #[serde(rename = "viewsText")]
+    views_text: String,
+}
+
+#[derive(Serialize)]
+struct RssFeedResponse {
+    #[serde(rename = "channelId")]
+    channel_id: String,
+    #[serde(rename = "channelName")]
+    channel_name: String,
+    videos: Vec<RssVideo>,
+}
+
+#[derive(Deserialize)]
+struct RssFeedQuery {
+    #[serde(rename = "channelId")]
+    channel_id: String,
+}
+
+async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
+    if query.channel_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Missing channelId parameter" })),
+        )
+            .into_response();
+    }
+
+    let url = format!(
+        "https://www.youtube.com/feeds/videos.xml?channel_id={}",
+        query.channel_id
+    );
+
+    let resp = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    if !resp.status().is_success() {
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": format!("YouTube RSS error: {}", resp.status()) })),
+        )
+            .into_response();
+    }
+
+    let xml = match resp.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let (channel_name, videos) = parse_rss_feed(&xml);
+
+    Json(RssFeedResponse {
+        channel_id: query.channel_id,
+        channel_name,
+        videos,
+    })
+    .into_response()
+}
+
+fn parse_rss_feed(xml: &str) -> (String, Vec<RssVideo>) {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_str(xml);
+    let mut buf = Vec::new();
+    let mut videos = Vec::new();
+    let mut channel_name = String::new();
+
+    // Track current element path for context
+    let mut in_entry = false;
+    let mut current_tag = String::new();
+
+    // Entry fields
+    let mut video_id = String::new();
+    let mut title = String::new();
+    let mut published = String::new();
+    let mut views: i64 = 0;
+    let mut found_channel_name = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let local = tag_name.split(':').last().unwrap_or(&tag_name).to_string();
+
+                if local == "entry" {
+                    in_entry = true;
+                    video_id.clear();
+                    title.clear();
+                    published.clear();
+                    views = 0;
+                } else if !in_entry && local == "name" && !found_channel_name {
+                    current_tag = "channel_name".to_string();
+                } else if in_entry {
+                    match local.as_str() {
+                        "videoId" => current_tag = "videoId".to_string(),
+                        "title" => current_tag = "title".to_string(),
+                        "published" => current_tag = "published".to_string(),
+                        "statistics" => {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"views" {
+                                    views = String::from_utf8_lossy(&attr.value)
+                                        .parse()
+                                        .unwrap_or(0);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                let text = e.unescape().unwrap_or_default().to_string();
+                match current_tag.as_str() {
+                    "channel_name" => {
+                        channel_name = text;
+                        found_channel_name = true;
+                    }
+                    "videoId" => video_id = text,
+                    "title" => title = text,
+                    "published" => published = text,
+                    _ => {}
+                }
+                current_tag.clear();
+            }
+            Ok(Event::End(e)) => {
+                let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let local = tag_name.split(':').last().unwrap_or(&tag_name);
+
+                if local == "entry" && in_entry {
+                    if !video_id.is_empty() {
+                        let thumbnail = format!(
+                            "https://i.ytimg.com/vi/{}/mqdefault.jpg",
+                            video_id
+                        );
+                        let published_text = format_relative_date(&published);
+                        let views_text = format_view_count(views);
+
+                        videos.push(RssVideo {
+                            video_id: video_id.clone(),
+                            title: title.clone(),
+                            published: published.clone(),
+                            published_text,
+                            thumbnail,
+                            views,
+                            views_text,
+                        });
+                    }
+                    in_entry = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    (channel_name, videos)
+}
+
+fn format_relative_date(iso_date: &str) -> String {
+    use chrono::{DateTime, Utc};
+
+    let parsed = iso_date.parse::<DateTime<Utc>>();
+    let dt = match parsed {
+        Ok(d) => d,
+        Err(_) => return iso_date.to_string(),
+    };
+
+    let now = Utc::now();
+    let diff = now.signed_duration_since(dt);
+
+    let days = diff.num_days();
+    if days == 0 {
+        let hours = diff.num_hours();
+        if hours == 0 {
+            let mins = diff.num_minutes();
+            if mins <= 1 {
+                return "just now".to_string();
+            }
+            return format!("{} minutes ago", mins);
+        }
+        return format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" });
+    }
+    if days == 1 {
+        return "1 day ago".to_string();
+    }
+    if days < 7 {
+        return format!("{} days ago", days);
+    }
+    if days < 30 {
+        let weeks = days / 7;
+        return format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" });
+    }
+    if days < 365 {
+        let months = days / 30;
+        return format!("{} month{} ago", months, if months == 1 { "" } else { "s" });
+    }
+    let years = days / 365;
+    format!("{} year{} ago", years, if years == 1 { "" } else { "s" })
+}
+
+fn format_view_count(views: i64) -> String {
+    if views >= 1_000_000_000 {
+        format!("{:.1}B views", views as f64 / 1_000_000_000.0)
+    } else if views >= 1_000_000 {
+        format!("{:.1}M views", views as f64 / 1_000_000.0)
+    } else if views >= 1_000 {
+        format!("{:.1}K views", views as f64 / 1_000.0)
+    } else {
+        format!("{} views", views)
+    }
 }
