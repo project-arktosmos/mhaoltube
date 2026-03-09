@@ -49,9 +49,32 @@ class LibraryService {
 		try {
 			const content = await this.fetchJson<YouTubeContent[]>('/api/media');
 			this.state.update((s) => ({ ...s, content, contentLoading: false }));
+
+			if (content.some((c) => c.durationSeconds == null)) {
+				this.fillMissingDurations();
+			}
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			this.state.update((s) => ({ ...s, contentLoading: false, contentError: errorMsg }));
+		}
+	}
+
+	private async fillMissingDurations(): Promise<void> {
+		try {
+			const filled = await this.fetchJson<{ youtubeId: string; durationSeconds: number }[]>(
+				'/api/media/fill-durations',
+				{ method: 'POST' }
+			);
+			if (filled.length === 0) return;
+			const map = new Map(filled.map((f) => [f.youtubeId, f.durationSeconds]));
+			this.state.update((s) => ({
+				...s,
+				content: s.content.map((c) =>
+					map.has(c.youtubeId) ? { ...c, durationSeconds: map.get(c.youtubeId)! } : c
+				)
+			}));
+		} catch {
+			// non-critical
 		}
 	}
 

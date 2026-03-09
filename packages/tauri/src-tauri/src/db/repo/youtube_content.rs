@@ -86,6 +86,26 @@ impl YouTubeContentRepo {
         .unwrap();
     }
 
+    pub fn get_ids_missing_duration(&self) -> Vec<String> {
+        let conn = self.db.lock();
+        let mut stmt = conn
+            .prepare("SELECT youtube_id FROM youtube_content WHERE duration_seconds IS NULL")
+            .unwrap();
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
+    pub fn update_duration(&self, youtube_id: &str, duration_seconds: i64) {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET duration_seconds = ?2 WHERE youtube_id = ?1",
+            params![youtube_id, duration_seconds],
+        )
+        .unwrap();
+    }
+
     pub fn update_video_path(&self, youtube_id: &str, path: &str) {
         let conn = self.db.lock();
         conn.execute(
