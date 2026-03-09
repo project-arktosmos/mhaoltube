@@ -154,7 +154,7 @@ impl DownloadPipeline {
         // Step 3: Select formats
         let has_po_token = po_token_was_used;
 
-        // For Both mode, treat format selection as Video mode
+        // For Both mode, treat video format selection as Video mode
         let effective_mode = match config.mode {
             DownloadMode::Both => &DownloadMode::Video,
             ref m => m,
@@ -168,6 +168,25 @@ impl DownloadPipeline {
             config.video_format.as_ref(),
             has_po_token,
         )?;
+
+        // For Both mode, also select audio-only format for direct download (no ffmpeg needed).
+        // This tries audio-only adaptive streams first; falls back to None if only muxed
+        // fallback is available (so ffmpeg extraction from video is used instead).
+        let audio_selected = if config.mode == DownloadMode::Both {
+            select_formats(
+                &resolved_formats,
+                &DownloadMode::Audio,
+                &config.audio_quality,
+                &config.audio_format,
+                None,
+                None,
+                has_po_token,
+            )
+            .ok()
+            .filter(|s| !s.needs_audio_extraction)
+        } else {
+            None
+        };
 
         // Step 4: Build download headers
         let download_headers = Self::build_download_headers(client);
@@ -190,7 +209,8 @@ impl DownloadPipeline {
         match config.mode {
             DownloadMode::Both => {
                 self.execute_both(
-                    config, &selected, output_dir, video_output_dir, audio_output_dir,
+                    config, &selected, audio_selected.as_ref(),
+                    output_dir, video_output_dir, audio_output_dir,
                     file_stem, &state_tx, cancel_rx, http_client, &download_headers,
                 ).await
             }
@@ -212,10 +232,16 @@ impl DownloadPipeline {
     }
 
     /// Execute download in Both mode: produce both a video and audio file.
+    ///
+    /// Audio strategy (in priority order):
+    ///   1. Direct download of an audio-only adaptive stream (`audio_selected` is Some) — no ffmpeg needed.
+    ///   2. Extract audio from the downloaded video file via ffmpeg.
+    ///   3. Skip audio (ffmpeg unavailable and no audio-only stream).
     async fn execute_both(
         &self,
         config: &DownloadTaskConfig,
         selected: &SelectedFormats,
+        audio_selected: Option<&SelectedFormats>,
         output_dir: &Path,
         video_output_dir: &Path,
         audio_output_dir: &Path,
@@ -239,15 +265,26 @@ impl DownloadPipeline {
 
         let video_path_str = video_final.to_string_lossy().to_string();
 
-        // Now produce the audio file by extracting from the video
-        let audio_ext = match config.audio_format {
-            AudioFormat::Aac => "m4a",
-            AudioFormat::Mp3 => "mp3",
-            AudioFormat::Opus => "opus",
-        };
-        let audio_final = audio_output_dir.join(format!("{}.{}", file_stem, audio_ext));
-
-        let audio_path_str = if self.muxer.is_available() {
+        // Produce the audio file
+        let audio_path_str = if let Some(audio) = audio_selected {
+            // Strategy 1: direct audio-only stream download (preferred, no ffmpeg needed)
+            let audio_final = audio_output_dir.join(format!("{}.{}", file_stem, audio.output_extension));
+            log::info!(
+                "Both mode: downloading audio-only stream ({} container) to {:?}",
+                audio.output_extension,
+                audio_final
+            );
+            self.download_single(&audio.audio, &audio_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+                .await?;
+            audio_final.to_string_lossy().to_string()
+        } else if self.muxer.is_available() {
+            // Strategy 2: extract audio from video via ffmpeg
+            let audio_ext = match config.audio_format {
+                AudioFormat::Aac => "m4a",
+                AudioFormat::Mp3 => "mp3",
+                AudioFormat::Opus => "opus",
+            };
+            let audio_final = audio_output_dir.join(format!("{}.{}", file_stem, audio_ext));
             let _ = state_tx.send(PipelineState::Muxing);
             self.muxer
                 .convert_audio(
@@ -259,7 +296,8 @@ impl DownloadPipeline {
                 .await?;
             audio_final.to_string_lossy().to_string()
         } else {
-            log::warn!("FFmpeg not available; skipping audio extraction in Both mode");
+            // Strategy 3: no audio-only stream and no ffmpeg — skip audio
+            log::warn!("Both mode: no audio-only stream available and FFmpeg not found; audio file skipped");
             String::new()
         };
 
