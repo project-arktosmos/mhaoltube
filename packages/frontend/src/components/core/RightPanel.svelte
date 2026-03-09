@@ -26,24 +26,19 @@
 	let playerMode = $state<'audio' | 'video' | null>(null);
 	let audioEl = $state<HTMLAudioElement | null>(null);
 
-	// Video src: use in-progress stream during download, final stream once complete
+	// Video src: use in-progress stream during download (and keep it after completion until
+	// the library refreshes), then fall back to the library stream once hasVideo is set.
 	let videoSrc = $derived(
 		video?.hasVideo
 			? libraryService.streamVideoUrl(video.videoId)
-			: activeDownload?.videoOutputPath && ['downloading', 'muxing'].includes(activeDownload.state)
+			: activeDownload?.videoOutputPath &&
+				  ['downloading', 'muxing', 'completed'].includes(activeDownload.state)
 				? libraryService.streamDownloadVideoUrl(activeDownload.downloadId)
 				: null
 	);
 
 	$effect(() => {
 		if (video) playerMode = null;
-	});
-
-	// Auto-show video player as soon as a streamable source is available
-	$effect(() => {
-		if (videoSrc && playerMode !== 'video') {
-			playerMode = 'video';
-		}
 	});
 
 	$effect(() => {
@@ -141,7 +136,7 @@
 				</button>
 			</div>
 
-			{#if playerMode === 'video' && videoSrc}
+			{#if videoSrc && playerMode !== 'audio'}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video controls autoplay src={videoSrc} class="w-full rounded-lg">
 					<source src={videoSrc} type="video/mp4" />
@@ -186,9 +181,9 @@
 					{#if video.hasVideo || videoSrc}
 						<button
 							class={classNames('btn w-full gap-2 btn-sm btn-secondary', {
-								'btn-active': playerMode === 'video'
+								'btn-active': playerMode !== 'audio' && !!videoSrc
 							})}
-							onclick={() => (playerMode = playerMode === 'video' ? null : 'video')}
+							onclick={() => (playerMode = null)}
 						>
 							▶ {video.hasVideo ? 'Play Video' : 'Play (downloading…)'}
 						</button>
