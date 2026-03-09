@@ -122,26 +122,58 @@
 		mediaEl.muted = !mediaEl.muted;
 	}
 
+	interface WebKitElement extends HTMLElement {
+		webkitRequestFullscreen?: () => Promise<void>;
+	}
+	interface WebKitDocument extends Document {
+		webkitExitFullscreen?: () => Promise<void>;
+		webkitFullscreenElement?: Element | null;
+	}
+
+	function requestFs(el: HTMLElement) {
+		if (el.requestFullscreen) return el.requestFullscreen();
+		if ((el as WebKitElement).webkitRequestFullscreen)
+			return (el as WebKitElement).webkitRequestFullscreen!();
+		return Promise.reject();
+	}
+
+	function exitFs() {
+		if (document.exitFullscreen) return document.exitFullscreen();
+		if ((document as WebKitDocument).webkitExitFullscreen)
+			return (document as WebKitDocument).webkitExitFullscreen!();
+		return Promise.reject();
+	}
+
+	function getFullscreenElement(): Element | null {
+		return (
+			document.fullscreenElement ?? (document as WebKitDocument).webkitFullscreenElement ?? null
+		);
+	}
+
 	function toggleFullscreen() {
 		const wrapper = mediaEl?.closest('[data-media-player]') as HTMLElement | null;
 		if (!wrapper) return;
 
-		if (document.fullscreenElement) {
-			document.exitFullscreen();
+		if (getFullscreenElement()) {
+			exitFs().catch(() => {});
 			fullscreen = false;
 		} else {
-			wrapper.requestFullscreen().catch(() => {});
+			requestFs(wrapper).catch(() => {});
 			fullscreen = true;
 		}
 	}
 
 	function handleFullscreenChange() {
-		fullscreen = !!document.fullscreenElement;
+		fullscreen = !!getFullscreenElement();
 	}
 
 	$effect(() => {
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
-		return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+		return () => {
+			document.removeEventListener('fullscreenchange', handleFullscreenChange);
+			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+		};
 	});
 
 	$effect(() => {
