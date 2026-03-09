@@ -58,6 +58,9 @@
 					{#if hasLink}
 						<span class="badge badge-sm badge-primary">{$_('platforms.download')}</span>
 					{/if}
+					{#if platform.key === 'macos' && hasLink}
+						<span class="text-xs text-base-content/50">{$_('platforms.macos_note')}</span>
+					{/if}
 				</svelte:element>
 			{/each}
 		</div>
