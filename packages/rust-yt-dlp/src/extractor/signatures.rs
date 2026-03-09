@@ -16,6 +16,8 @@ pub struct SignatureResolver {
     n_function: Option<String>,
     /// Full helper code that the signature function depends on.
     helper_code: Option<String>,
+    /// signatureTimestamp extracted from player.js (used in Innertube player requests).
+    sts: Option<u64>,
 }
 
 impl SignatureResolver {
@@ -25,6 +27,7 @@ impl SignatureResolver {
             sig_function: None,
             n_function: None,
             helper_code: None,
+            sts: None,
         }
     }
 
@@ -64,18 +67,31 @@ impl SignatureResolver {
             .as_deref()
             .and_then(|f| extract_helper_object(source, f).ok());
 
+        self.sts = crate::extractor::player::extract_sts(source);
+        if self.sts.is_some() {
+            log::info!("player.js: signatureTimestamp found: {:?}", self.sts);
+        } else {
+            log::warn!("player.js: signatureTimestamp not found (STS will be omitted from player requests)");
+        }
+
         self.player_js_url = Some(player_js_url.to_string());
         self.n_function = n_func;
         self.sig_function = sig_func;
         self.helper_code = helper;
 
         log::info!(
-            "Loaded player.js from {} (n-param: {}, sig-cipher: {})",
+            "Loaded player.js from {} (n-param: {}, sig-cipher: {}, sts: {})",
             player_js_url,
             if self.n_function.is_some() { "ok" } else { "unavailable" },
-            if self.sig_function.is_some() { "ok" } else { "unavailable" }
+            if self.sig_function.is_some() { "ok" } else { "unavailable" },
+            if self.sts.is_some() { "ok" } else { "unavailable" },
         );
         Ok(())
+    }
+
+    /// Return the signatureTimestamp extracted from player.js, if available.
+    pub fn sts(&self) -> Option<u64> {
+        self.sts
     }
 
     /// Check if we already have functions loaded for a given player.js URL.
@@ -133,6 +149,7 @@ impl SignatureResolver {
         self.sig_function = None;
         self.n_function = None;
         self.helper_code = None;
+        self.sts = None;
     }
 }
 

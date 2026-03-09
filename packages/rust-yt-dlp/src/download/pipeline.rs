@@ -259,7 +259,7 @@ impl DownloadPipeline {
                 .await?;
         } else {
             // Muxed stream — download it as the video file
-            self.download_single(&selected.audio, &video_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+            self.download_single_with_retry(&selected.audio, &video_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
                 .await?;
         }
 
@@ -274,7 +274,7 @@ impl DownloadPipeline {
                 audio.output_extension,
                 audio_final
             );
-            self.download_single(&audio.audio, &audio_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+            self.download_single_with_retry(&audio.audio, &audio_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
                 .await?;
             audio_final.to_string_lossy().to_string()
         } else if self.muxer.is_available() {
@@ -329,7 +329,7 @@ impl DownloadPipeline {
             self.download_and_mux(config, selected, output_dir, final_output, state_tx, cancel_rx, http_client, download_headers)
                 .await?;
         } else {
-            self.download_single(&selected.audio, final_output, config, state_tx, cancel_rx, http_client, download_headers)
+            self.download_single_with_retry(&selected.audio, final_output, config, state_tx, cancel_rx, http_client, download_headers)
                 .await?;
         }
 
@@ -431,7 +431,16 @@ impl DownloadPipeline {
                 (None, None)
             };
 
-            match self.innertube.player(video_id, client, token, vd).await {
+            let sts = if client.requires_js {
+                if let Err(e) = self.ensure_player_js_loaded(video_id).await {
+                    log::warn!("Could not load player.js before {} request (no STS): {}", client.name, e);
+                }
+                self.sig_resolver.lock().sts()
+            } else {
+                None
+            };
+
+            match self.innertube.player(video_id, client, sts, token, vd).await {
                 Ok(resp) if resp.is_playable() => {
                     let token_used = token.is_some();
                     log::info!(
@@ -603,6 +612,37 @@ impl DownloadPipeline {
         Ok(())
     }
 
+    /// Like `download_single`, but on a CDN 403 invalidates the player.js cache and retries once
+    /// with a freshly transformed n-parameter.
+    async fn download_single_with_retry(
+        &self,
+        format: &ResolvedFormat,
+        output_path: &Path,
+        config: &DownloadTaskConfig,
+        state_tx: &watch::Sender<PipelineState>,
+        cancel_rx: watch::Receiver<bool>,
+        http_client: &reqwest::Client,
+        download_headers: &HeaderMap,
+    ) -> Result<()> {
+        match self.download_single(format, output_path, config, state_tx, cancel_rx.clone(), http_client, download_headers).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.to_string().contains("403") => {
+                log::warn!("CDN 403 for itag {} — invalidating player.js cache and retrying", format.itag);
+                self.sig_resolver.lock().invalidate();
+                if let Err(load_err) = self.ensure_player_js_loaded(&config.video_id).await {
+                    log::warn!("Failed to reload player.js for retry: {}", load_err);
+                }
+                let refreshed_url = {
+                    let resolver = self.sig_resolver.lock();
+                    signatures::apply_n_param(&format.url, &resolver).unwrap_or_else(|_| format.url.clone())
+                };
+                let refreshed = ResolvedFormat { url: refreshed_url, ..format.clone() };
+                self.download_single(&refreshed, output_path, config, state_tx, cancel_rx, http_client, download_headers).await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     async fn download_and_mux(
         &self,
         config: &DownloadTaskConfig,
@@ -622,34 +662,8 @@ impl DownloadPipeline {
         let audio_tmp = output_dir.join(format!("{}.audio.tmp.{}", file_stem, audio_format.container));
 
         // Download video
-        let (progress_tx, mut progress_rx) = watch::channel(DownloadProgressUpdate {
-            downloaded_bytes: 0,
-            total_bytes: 0,
-        });
-
-        let state_tx_clone = state_tx.clone();
-        let progress_forwarder = tokio::spawn(async move {
-            while progress_rx.changed().await.is_ok() {
-                let update = progress_rx.borrow().clone();
-                let _ = state_tx_clone.send(PipelineState::Downloading {
-                    downloaded: update.downloaded_bytes,
-                    total: update.total_bytes,
-                });
-            }
-        });
-
-        download_with_progress(
-            http_client,
-            &video_format.url,
-            &video_tmp,
-            video_format.content_length,
-            download_headers,
-            progress_tx,
-            cancel_rx.clone(),
-        )
-        .await?;
-
-        progress_forwarder.abort();
+        self.download_single_with_retry(video_format, &video_tmp, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+            .await?;
 
         if *cancel_rx.borrow() {
             let _ = tokio::fs::remove_file(&video_tmp).await;
@@ -657,21 +671,8 @@ impl DownloadPipeline {
         }
 
         // Download audio
-        let (progress_tx2, _progress_rx2) = watch::channel(DownloadProgressUpdate {
-            downloaded_bytes: 0,
-            total_bytes: 0,
-        });
-
-        download_with_progress(
-            http_client,
-            &audio_format.url,
-            &audio_tmp,
-            audio_format.content_length,
-            download_headers,
-            progress_tx2,
-            cancel_rx,
-        )
-        .await?;
+        self.download_single_with_retry(audio_format, &audio_tmp, config, state_tx, cancel_rx, http_client, download_headers)
+            .await?;
 
         // Mux
         let _ = state_tx.send(PipelineState::Muxing);
