@@ -84,8 +84,8 @@ async fn list_library_fs(State(state): State<AppState>) -> impl IntoResponse {
     let base = std::path::PathBuf::from(&library.path);
     Json(LibraryFs {
         path: library.path,
-        audio: list_dir(&base.join("audio")),
-        video: list_dir(&base.join("video")),
+        audio: list_dir(&base.join("audio").join(".cache")),
+        video: list_dir(&base.join("video").join(".cache")),
     })
     .into_response()
 }
