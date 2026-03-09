@@ -70,12 +70,12 @@
 		const initial: Record<string, YouTubeChannelMeta> = {};
 		const needsFetch: YouTubeChannel[] = [];
 		for (const channel of rows) {
-			if (channel.image_url && channel.subscriber_text) {
+			if (channel.image_url) {
 				initial[channel.handle] = {
 					channelId: channel.id,
-					avatar: channel.image_url,
+					avatar: channel.image_url!,
 					description: '',
-					subscriberText: channel.subscriber_text
+					subscriberText: channel.subscriber_text ?? ''
 				};
 			} else {
 				needsFetch.push(channel);
@@ -88,11 +88,17 @@
 			if (channelMeta[channel.handle]) continue;
 			try {
 				const res = await fetch(apiUrl(`/api/youtube/channel-meta?handle=${channel.handle}`));
-				if (!res.ok) continue;
+				if (!res.ok) {
+					console.error(`[channel-meta] ${channel.handle} → HTTP ${res.status}`, await res.text());
+					continue;
+				}
 				const data: YouTubeChannelMeta = await res.json();
+				console.log(
+					`[channel-meta] ${channel.handle} avatar="${data.avatar}" subs="${data.subscriberText}"`
+				);
 				channelMeta = { ...channelMeta, [channel.handle]: data };
-			} catch {
-				// Silently ignore metadata fetch failures
+			} catch (e) {
+				console.error(`[channel-meta] ${channel.handle} fetch failed`, e);
 			}
 		}
 	}
