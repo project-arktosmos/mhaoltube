@@ -63,6 +63,7 @@ async fn main() {
         // Video/Playlist info
         .route("/api/info/video", get(get_video_info))
         .route("/api/info/playlist", get(get_playlist_info))
+        .route("/api/info/stream-urls", get(get_stream_urls))
         // Downloads CRUD
         .route("/api/downloads", get(list_downloads))
         .route("/api/downloads", post(queue_download))
@@ -140,6 +141,18 @@ async fn get_video_info(
 ) -> impl IntoResponse {
     match mgr.fetch_video_info(&query.url).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::to_value(info).unwrap())).into_response(),
+        Err(e) => {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
+    }
+}
+
+async fn get_stream_urls(
+    State(mgr): State<AppState>,
+    Query(query): Query<UrlQuery>,
+) -> impl IntoResponse {
+    match mgr.extract_stream_urls(&query.url).await {
+        Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap())).into_response(),
         Err(e) => {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }

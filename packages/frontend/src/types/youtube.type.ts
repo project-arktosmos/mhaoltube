@@ -102,6 +102,30 @@ export interface YouTubeVideoInfo {
 	videoId: string;
 }
 
+// ===== Stream URL Extraction =====
+
+export interface YouTubeStreamFormat {
+	itag: number;
+	url: string;
+	mimeType: string;
+	bitrate: number;
+	contentLength: number | null;
+	width: number | null;
+	height: number | null;
+	qualityLabel: string | null;
+	audioQuality: string | null;
+	fps: number | null;
+	isAudioOnly: boolean;
+	isVideoOnly: boolean;
+	codec: string;
+	container: string;
+}
+
+export interface YouTubeStreamUrlResult {
+	formats: YouTubeStreamFormat[];
+	expiresAt: number;
+}
+
 // ===== Playlist Types =====
 
 export interface YouTubePlaylistVideo {
@@ -168,6 +192,10 @@ export interface YouTubeContent {
 	channelId: string | null;
 	hasVideo: boolean;
 	hasAudio: boolean;
+	videoSize: number | null;
+	audioSize: number | null;
+	isFavorite: boolean;
+	favoritedAt: string | null;
 	createdAt: string;
 }
 
@@ -313,6 +341,7 @@ export interface RightPanelVideo {
 	publishedText?: string;
 	uploaderName?: string;
 	uploaderAvatar?: string;
+	uploaderUrl?: string;
 	uploaderVerified?: boolean;
 	hasVideo?: boolean;
 	hasAudio?: boolean;

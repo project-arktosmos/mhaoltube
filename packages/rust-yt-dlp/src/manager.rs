@@ -6,7 +6,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::config::YtDownloadConfig;
 use crate::download::muxer::FfmpegMuxer;
-use crate::download::pipeline::{DownloadPipeline, DownloadTaskConfig, PipelineState};
+use crate::download::pipeline::{DownloadPipeline, DownloadTaskConfig, PipelineState, StreamUrlResult};
 use crate::extractor::innertube::InnertubeApi;
 use crate::extractor::playlist;
 use crate::extractor::signatures;
@@ -317,6 +317,18 @@ impl DownloadManager {
         };
         self.pipeline
             .fetch_video_info(&video_id, po_token.as_deref(), visitor_data.as_deref())
+            .await
+    }
+
+    /// Extract stream URLs without downloading (delegates to pipeline).
+    pub async fn extract_stream_urls(&self, url: &str) -> anyhow::Result<StreamUrlResult> {
+        let video_id = extract_video_id(url)?;
+        let (po_token, visitor_data) = {
+            let config = self.config.read();
+            (config.po_token.clone(), config.visitor_data.clone())
+        };
+        self.pipeline
+            .extract_stream_urls(&video_id, po_token.as_deref(), visitor_data.as_deref())
             .await
     }
 

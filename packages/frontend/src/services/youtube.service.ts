@@ -17,7 +17,9 @@ import {
 	type DownloadMode,
 	type MediaMode,
 	type VideoQuality,
-	type VideoFormat
+	type VideoFormat,
+	type YouTubeStreamUrlResult,
+	type YouTubeStreamFormat
 } from '$types/youtube.type';
 
 const API_PREFIX = '/api/ytdl';
@@ -545,6 +547,43 @@ class YouTubeService {
 		} catch {
 			// ignore
 		}
+	}
+
+	// ===== Stream URL Extraction =====
+
+	private streamUrlCache = new Map<string, { result: YouTubeStreamUrlResult; fetchedAt: number }>();
+
+	async fetchStreamUrls(videoId: string): Promise<YouTubeStreamUrlResult | null> {
+		if (!browser) return null;
+
+		const now = Math.floor(Date.now() / 1000);
+		const cached = this.streamUrlCache.get(videoId);
+		if (cached && cached.result.expiresAt - 300 > now) {
+			return cached.result;
+		}
+
+		try {
+			const url = `https://www.youtube.com/watch?v=${videoId}`;
+			const result = await this.fetchJson<YouTubeStreamUrlResult>(
+				`/api/ytdl/info/stream-urls?url=${encodeURIComponent(url)}`
+			);
+			this.streamUrlCache.set(videoId, { result, fetchedAt: now });
+			return result;
+		} catch (error) {
+			console.error('[YouTube] Failed to extract stream URLs:', error);
+			return null;
+		}
+	}
+
+	selectBestMuxedFormat(result: YouTubeStreamUrlResult): YouTubeStreamFormat | null {
+		const muxed = result.formats.filter((f) => !f.isAudioOnly && !f.isVideoOnly);
+		if (muxed.length === 0) return null;
+		muxed.sort((a, b) => {
+			const heightDiff = (b.height ?? 0) - (a.height ?? 0);
+			if (heightDiff !== 0) return heightDiff;
+			return b.bitrate - a.bitrate;
+		});
+		return muxed[0];
 	}
 
 	// ===== SSE Connection =====

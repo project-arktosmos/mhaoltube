@@ -1,6 +1,6 @@
 use anyhow::Result;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Raw player response from the Innertube API.
 #[derive(Debug, Deserialize)]
@@ -77,7 +77,8 @@ pub struct PlayabilityStatus {
 }
 
 /// A fully resolved format with a usable download URL.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResolvedFormat {
     pub itag: u32,
     pub url: String,

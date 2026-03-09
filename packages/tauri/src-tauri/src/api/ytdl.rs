@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/downloads/{id}/stream/video", get(stream_download_video))
         .route("/info/video", get(video_info))
         .route("/info/playlist", get(playlist_info))
+        .route("/info/stream-urls", get(stream_urls))
         .route("/settings", get(get_settings).put(update_settings))
         .route("/status", get(get_status))
         .route("/ytdlp/status", get(ytdlp_status))
@@ -259,6 +260,20 @@ async fn video_info(
 ) -> impl IntoResponse {
     match state.ytdl_manager.fetch_video_info(&query.url).await {
         Ok(info) => Json(serde_json::to_value(info).unwrap()).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn stream_urls(
+    State(state): State<AppState>,
+    Query(query): Query<VideoInfoQuery>,
+) -> impl IntoResponse {
+    match state.ytdl_manager.extract_stream_urls(&query.url).await {
+        Ok(result) => Json(serde_json::to_value(result).unwrap()).into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": e.to_string() })),

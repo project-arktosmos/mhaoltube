@@ -6,7 +6,6 @@
 	import { youtubeService } from '$services/youtube.service';
 	import { libraryService } from '$services/library.service';
 	import Navbar from '$components/core/Navbar.svelte';
-	import Sidebar from '$components/core/Sidebar.svelte';
 	import RightPanel from '$components/core/RightPanel.svelte';
 
 	let { children } = $props();
@@ -23,11 +22,10 @@
 	});
 </script>
 
-<div class="flex min-h-screen flex-col">
+<div class="flex h-screen flex-col overflow-hidden">
 	<Navbar />
 	<div class="flex min-h-0 flex-1">
-		<Sidebar />
-		<main class="min-w-0 flex-1 bg-base-300">
+		<main class="min-w-0 flex-1 overflow-y-auto bg-base-300">
 			{@render children?.()}
 		</main>
 		<RightPanel />

@@ -5,7 +5,7 @@ use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,40 @@ pub fn router() -> Router<AppState> {
         .route("/channel-feed", get(channel_feed))
         .route("/channel-rss", get(channel_rss))
         .route("/channel-meta", get(channel_meta))
+        .route("/channel-subscribe", post(channel_subscribe))
         .route("/image-proxy", get(image_proxy))
+}
+
+#[derive(Deserialize)]
+struct ChannelSubscribePayload {
+    id: String,
+    handle: String,
+    name: String,
+    url: String,
+    subscriber_text: Option<String>,
+    image_url: Option<String>,
+}
+
+async fn channel_subscribe(
+    State(state): State<AppState>,
+    Json(payload): Json<ChannelSubscribePayload>,
+) -> impl IntoResponse {
+    use crate::db::repo::youtube_channel::YouTubeChannelRow;
+    if payload.id.is_empty() || payload.handle.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "id and handle are required"}))).into_response();
+    }
+    let row = YouTubeChannelRow {
+        id: payload.id,
+        handle: payload.handle,
+        name: payload.name,
+        url: payload.url,
+        subscriber_text: payload.subscriber_text,
+        image_url: payload.image_url,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+    state.youtube_channels.insert(&row);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }
 
 /// Fetch YouTube oEmbed data for a video ID, using the cache if available.
@@ -486,106 +519,9 @@ async fn channel_rss(
     .into_response()
 }
 
-/// Fetch channel metadata (ID, avatar URL, subscriber text) via the Innertube browse API.
-/// This replaces the previous HTML-scraping approach which YouTube's bot detection blocks.
-async fn fetch_channel_data_via_innertube(handle: &str) -> Result<(String, String, String), String> {
-    let browse_id = if handle.starts_with('@') {
-        handle.to_string()
-    } else {
-        format!("@{}", handle)
-    };
-
-    let body = serde_json::json!({
-        "context": {
-            "client": {
-                "clientName": "WEB",
-                "clientVersion": "2.20260301.01.00",
-                "hl": "en",
-                "gl": "US"
-            }
-        },
-        "browseId": browse_id
-    });
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(INNERTUBE_BROWSE_URL)
-        .header("Content-Type", "application/json")
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
-        .header("X-YouTube-Client-Name", "1")
-        .header("X-YouTube-Client-Version", "2.20260301.01.00")
-        .header("Origin", "https://www.youtube.com")
-        .header("Referer", "https://www.youtube.com/")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Innertube channel request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Innertube channel browse returned {}", resp.status()));
-    }
-
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Innertube channel response: {}", e))?;
-
-    let channel_id = data["metadata"]["channelMetadataRenderer"]["externalId"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-
-    // Highest-resolution thumbnail from metadata block
-    let avatar = data["metadata"]["channelMetadataRenderer"]["thumbnail"]["thumbnails"]
-        .as_array()
-        .and_then(|arr| arr.last())
-        .and_then(|t| t["url"].as_str())
-        .unwrap_or_default()
-        .to_string();
-
-    let subscriber_text = extract_subscriber_text_from_browse(&data);
-
-    Ok((channel_id, avatar, subscriber_text))
-}
-
-/// Extract subscriber count text from an Innertube channel browse response.
-/// Tries the classic c4TabbedHeaderRenderer first, then the newer pageHeaderRenderer.
-fn extract_subscriber_text_from_browse(data: &serde_json::Value) -> String {
-    // Classic header
-    if let Some(s) = data["header"]["c4TabbedHeaderRenderer"]["subscriberCountText"]["simpleText"].as_str() {
-        return s.to_string();
-    }
-    // New pageHeaderRenderer
-    if let Some(rows) = data["header"]["pageHeaderRenderer"]["content"]["pageHeaderViewModel"]["metadata"]["contentMetadataViewModel"]["metadataRows"].as_array() {
-        for row in rows {
-            if let Some(parts) = row["metadataParts"].as_array() {
-                for part in parts {
-                    if let Some(text) = part["text"]["content"].as_str() {
-                        if text.contains("subscriber") {
-                            return text.to_string();
-                        }
-                    }
-                }
-            }
-        }
-    }
-    String::new()
-}
-
-/// Resolve a YouTube handle to the real UC... channel ID via Innertube.
-async fn resolve_channel_id(handle: &str) -> Result<String, String> {
-    // Try Innertube first
-    if let Ok((channel_id, _, _)) = fetch_channel_data_via_innertube(handle).await {
-        if !channel_id.is_empty() {
-            return Ok(channel_id);
-        }
-    }
-    // Fallback: extract channel ID from the YouTube channel page HTML
-    resolve_channel_id_from_html(handle).await
-}
-
-/// Extract channel ID from a YouTube channel page by scanning for the RSS feed link tag.
-async fn resolve_channel_id_from_html(handle: &str) -> Result<String, String> {
+/// Fetch channel metadata by scraping OpenGraph tags and ytInitialData from the channel page.
+/// One HTTP GET to https://www.youtube.com/@handle — same technique as WhatsApp/Telegram link previews.
+async fn fetch_channel_data_from_page(handle: &str) -> Result<(String, String, String), String> {
     let normalized = if handle.starts_with('@') {
         handle.to_string()
     } else {
@@ -611,25 +547,77 @@ async fn resolve_channel_id_from_html(handle: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to read channel page: {}", e))?;
 
-    // Look for the RSS feed link which embeds the UC channel ID
-    // e.g. feeds/videos.xml?channel_id=UCxxxxxx
+    let avatar = extract_og_meta(&html, "og:image")
+        .map(|s| if s.starts_with("//") { format!("https:{}", s) } else { s })
+        .unwrap_or_default();
+
+    let channel_id = extract_channel_id_from_html(&html).unwrap_or_default();
+    let subscriber_text = extract_subscriber_from_html(&html);
+
+    eprintln!(
+        "[channel-page] handle={} id={} avatar={} subscribers={}",
+        handle,
+        channel_id,
+        if avatar.is_empty() { "<empty>" } else { &avatar },
+        if subscriber_text.is_empty() { "<empty>" } else { &subscriber_text }
+    );
+
+    Ok((channel_id, avatar, subscriber_text))
+}
+
+fn extract_og_meta(html: &str, property: &str) -> Option<String> {
+    let needle = format!("property=\"{}\"", property);
+    let pos = html.find(&needle)?;
+    let rest = &html[pos..];
+    let c = rest.find("content=\"")? + 9;
+    let val = &rest[c..];
+    let end = val.find('"')?;
+    let s = &val[..end];
+    if s.is_empty() { None } else { Some(s.to_string()) }
+}
+
+fn extract_channel_id_from_html(html: &str) -> Option<String> {
+    // RSS feed link: feeds/videos.xml?channel_id=UCxxxxxx
     if let Some(start) = html.find("feeds/videos.xml?channel_id=UC") {
         let after = &html[start + "feeds/videos.xml?channel_id=".len()..];
         let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
         if id.len() >= 20 {
-            return Ok(id);
+            return Some(id);
         }
     }
-    // Fallback: look for externalId in ytInitialData
+    // ytInitialData externalId
     if let Some(start) = html.find("\"externalId\":\"UC") {
         let after = &html[start + "\"externalId\":\"".len()..];
         let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
         if id.len() >= 20 {
-            return Ok(id);
+            return Some(id);
         }
     }
+    None
+}
 
-    Err("Could not find channel ID in page HTML".to_string())
+fn extract_subscriber_from_html(html: &str) -> String {
+    // ytInitialData: "subscriberCountText":{"simpleText":"1.23M subscribers"}
+    let marker = "\"subscriberCountText\":{\"simpleText\":\"";
+    if let Some(pos) = html.find(marker) {
+        let rest = &html[pos + marker.len()..];
+        if let Some(end) = rest.find('"') {
+            let s = &rest[..end];
+            if !s.is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// Resolve a YouTube handle to the real UC... channel ID.
+async fn resolve_channel_id(handle: &str) -> Result<String, String> {
+    let (channel_id, _, _) = fetch_channel_data_from_page(handle).await?;
+    if !channel_id.is_empty() {
+        return Ok(channel_id);
+    }
+    Err(format!("Could not resolve channel ID for {}", handle))
 }
 
 // ===== Channel Metadata =====
@@ -683,8 +671,8 @@ async fn channel_meta(
         if !channel_id.is_empty() {
             let avatar = image_url.as_deref().unwrap_or("").to_string();
             let sub_text = subscriber_text.as_deref().unwrap_or("").to_string();
-            // If all fields are populated, return immediately
-            if !avatar.is_empty() && !sub_text.is_empty() {
+            // Avatar is the authoritative cache signal — return immediately if we have it
+            if !avatar.is_empty() {
                 return Json(ChannelMeta {
                     channel_id: channel_id.clone(),
                     avatar,
@@ -693,8 +681,8 @@ async fn channel_meta(
                 })
                 .into_response();
             }
-            // Partial cache: try to enrich via Innertube, but fall back to what we have
-            if let Ok((new_id, new_avatar, new_sub)) = fetch_channel_data_via_innertube(&query.handle).await {
+            // Partial cache: enrich from channel page, fall back to what we have
+            if let Ok((new_id, new_avatar, new_sub)) = fetch_channel_data_from_page(&query.handle).await {
                 if !new_id.is_empty() || !new_avatar.is_empty() || !new_sub.is_empty() {
                     let conn = state.db.lock();
                     let _ = conn.execute(
@@ -725,8 +713,8 @@ async fn channel_meta(
         }
     }
 
-    // Not in DB at all — fetch from YouTube via Innertube
-    let (channel_id, avatar, subscriber_text) = match fetch_channel_data_via_innertube(&query.handle).await {
+    // Not in DB at all — fetch from YouTube channel page
+    let (channel_id, avatar, subscriber_text) = match fetch_channel_data_from_page(&query.handle).await {
         Ok(d) => d,
         Err(e) => {
             return (

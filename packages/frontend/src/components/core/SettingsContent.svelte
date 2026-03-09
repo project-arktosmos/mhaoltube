@@ -25,7 +25,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-2xl p-6">
+<div class="p-2">
 	<h3 class="text-lg font-bold">Settings</h3>
 	<p class="text-sm text-base-content/60">Application configuration and maintenance</p>
 

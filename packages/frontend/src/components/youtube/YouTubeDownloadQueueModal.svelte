@@ -19,10 +19,10 @@
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
 		onclick={handleBackdropClick}
 	>
-		<div class="w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
-			<div class="flex items-center justify-between mb-3">
+		<div class="mx-4 flex max-h-[80vh] w-full max-w-lg flex-col">
+			<div class="mb-3 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-base-content">Download Queue</h2>
-				<button class="btn btn-sm btn-ghost btn-circle" onclick={onClose} aria-label="Close">
+				<button class="btn btn-circle btn-ghost btn-sm" onclick={onClose} aria-label="Close">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						class="h-5 w-5"

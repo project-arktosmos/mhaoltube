@@ -1,6 +1,7 @@
 use anyhow::Result;
 use parking_lot::Mutex;
 use reqwest::header::{HeaderMap, HeaderValue, ORIGIN, REFERER, USER_AGENT};
+use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -55,6 +56,14 @@ pub enum PipelineState {
     Failed { error: String },
 }
 
+/// Result of stream URL extraction (without downloading).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamUrlResult {
+    pub formats: Vec<ResolvedFormat>,
+    pub expires_at: u64,
+}
+
 /// Orchestrates the full download pipeline.
 pub struct DownloadPipeline {
     innertube: Arc<InnertubeApi>,
@@ -97,6 +106,60 @@ impl DownloadPipeline {
             thumbnail_url: player_response.thumbnail_url(),
             uploader: details.author.clone(),
             video_id: details.video_id.clone(),
+        })
+    }
+
+    /// Extract resolved stream URLs without downloading.
+    pub async fn extract_stream_urls(
+        &self,
+        video_id: &str,
+        po_token: Option<&str>,
+        visitor_data: Option<&str>,
+    ) -> Result<StreamUrlResult> {
+        let (player_response, _client, po_token_was_used) =
+            self.fetch_player_response(video_id, po_token, visitor_data).await?;
+
+        if !player_response.is_playable() {
+            let reason = player_response
+                .unplayable_reason()
+                .unwrap_or_else(|| "Unknown reason".to_string());
+            return Err(YtDlpError::VideoUnavailable { reason }.into());
+        }
+
+        let mut resolved_formats = self.resolve_formats(&player_response, video_id).await?;
+
+        if resolved_formats.is_empty() {
+            return Err(YtDlpError::NoSuitableFormat.into());
+        }
+
+        // Append pot=TOKEN when applicable
+        if po_token_was_used {
+            if let Some(token) = po_token {
+                for fmt in &mut resolved_formats {
+                    if fmt.url.contains('?') {
+                        fmt.url = format!("{}&pot={}", fmt.url, token);
+                    } else {
+                        fmt.url = format!("{}?pot={}", fmt.url, token);
+                    }
+                }
+            }
+        }
+
+        let expires_in = player_response
+            .streaming_data
+            .as_ref()
+            .and_then(|sd| sd.expires_in_seconds.as_ref())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(21600); // default 6 hours
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(StreamUrlResult {
+            formats: resolved_formats,
+            expires_at: now + expires_in,
         })
     }
 

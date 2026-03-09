@@ -8,12 +8,16 @@ export interface LibraryServiceState {
 	content: YouTubeContent[];
 	contentLoading: boolean;
 	contentError: string | null;
+	favorites: YouTubeContent[];
+	favoritesLoading: boolean;
 }
 
 const initialState: LibraryServiceState = {
 	content: [],
 	contentLoading: false,
-	contentError: null
+	contentError: null,
+	favorites: [],
+	favoritesLoading: false
 };
 
 class LibraryService {
@@ -36,6 +40,7 @@ class LibraryService {
 			this.library.set(library);
 			this.initialized = true;
 			this.fetchContent();
+			this.fetchFavorites();
 		} catch (error) {
 			console.error('[library] Failed to initialize:', error);
 		}
@@ -49,9 +54,45 @@ class LibraryService {
 		try {
 			const content = await this.fetchJson<YouTubeContent[]>('/api/media');
 			this.state.update((s) => ({ ...s, content, contentLoading: false }));
+
+			if (content.some((c) => c.durationSeconds == null)) {
+				this.fillMissingDurations();
+			}
 		} catch (error) {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			this.state.update((s) => ({ ...s, contentLoading: false, contentError: errorMsg }));
+		}
+	}
+
+	private async fillMissingDurations(): Promise<void> {
+		try {
+			const filled = await this.fetchJson<{ youtubeId: string; durationSeconds: number }[]>(
+				'/api/media/fill-durations',
+				{ method: 'POST' }
+			);
+			if (filled.length === 0) return;
+			const map = new Map(filled.map((f) => [f.youtubeId, f.durationSeconds]));
+			this.state.update((s) => ({
+				...s,
+				content: s.content.map((c) =>
+					map.has(c.youtubeId) ? { ...c, durationSeconds: map.get(c.youtubeId)! } : c
+				)
+			}));
+		} catch {
+			// non-critical
+		}
+	}
+
+	async fetchFavorites(): Promise<void> {
+		if (!browser) return;
+
+		this.state.update((s) => ({ ...s, favoritesLoading: true }));
+
+		try {
+			const favorites = await this.fetchJson<YouTubeContent[]>('/api/media/favorites');
+			this.state.update((s) => ({ ...s, favorites, favoritesLoading: false }));
+		} catch {
+			this.state.update((s) => ({ ...s, favoritesLoading: false }));
 		}
 	}
 
@@ -65,6 +106,35 @@ class LibraryService {
 
 	streamDownloadVideoUrl(downloadId: string): string {
 		return apiUrl(`/api/ytdl/downloads/${downloadId}/stream/video`);
+	}
+
+	async toggleFavorite(youtubeId: string): Promise<boolean> {
+		const result = await this.fetchJson<{ isFavorite: boolean }>(
+			`/api/media/${youtubeId}/favorite`,
+			{
+				method: 'PUT'
+			}
+		);
+		this.state.update((s) => ({
+			...s,
+			content: s.content.map((c) =>
+				c.youtubeId === youtubeId ? { ...c, isFavorite: result.isFavorite } : c
+			)
+		}));
+		this.fetchFavorites();
+		return result.isFavorite;
+	}
+
+	async deleteAudio(youtubeId: string): Promise<void> {
+		const response = await fetch(apiUrl(`/api/media/${youtubeId}/audio`), { method: 'DELETE' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		await this.fetchContent();
+	}
+
+	async deleteVideo(youtubeId: string): Promise<void> {
+		const response = await fetch(apiUrl(`/api/media/${youtubeId}/video`), { method: 'DELETE' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		await this.fetchContent();
 	}
 
 	private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
