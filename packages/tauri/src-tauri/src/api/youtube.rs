@@ -447,46 +447,98 @@ async fn channel_rss(Query(query): Query<RssFeedQuery>) -> impl IntoResponse {
     .into_response()
 }
 
-/// Fetch a YouTube channel page HTML by handle.
-async fn fetch_channel_page(handle: &str) -> Result<String, String> {
-    let page_url = format!("https://www.youtube.com/@{}", handle);
+/// Fetch channel metadata (ID, avatar URL, subscriber text) via the Innertube browse API.
+/// This replaces the previous HTML-scraping approach which YouTube's bot detection blocks.
+async fn fetch_channel_data_via_innertube(handle: &str) -> Result<(String, String, String), String> {
+    let browse_id = if handle.starts_with('@') {
+        handle.to_string()
+    } else {
+        format!("@{}", handle)
+    };
+
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20260301.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "browseId": browse_id
+    });
+
     let client = reqwest::Client::new();
     let resp = client
-        .get(&page_url)
+        .post(INNERTUBE_BROWSE_URL)
+        .header("Content-Type", "application/json")
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
-        .header("Accept-Language", "en-US,en;q=0.9")
+        .header("X-YouTube-Client-Name", "1")
+        .header("X-YouTube-Client-Version", "2.20260301.01.00")
+        .header("Origin", "https://www.youtube.com")
+        .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch channel page: {}", e))?;
+        .map_err(|e| format!("Innertube channel request failed: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Channel page returned {}", resp.status()));
+        return Err(format!("Innertube channel browse returned {}", resp.status()));
     }
 
-    resp.text()
+    let data: serde_json::Value = resp
+        .json()
         .await
-        .map_err(|e| format!("Failed to read channel page: {}", e))
+        .map_err(|e| format!("Failed to parse Innertube channel response: {}", e))?;
+
+    let channel_id = data["metadata"]["channelMetadataRenderer"]["externalId"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+
+    // Highest-resolution thumbnail from metadata block
+    let avatar = data["metadata"]["channelMetadataRenderer"]["thumbnail"]["thumbnails"]
+        .as_array()
+        .and_then(|arr| arr.last())
+        .and_then(|t| t["url"].as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let subscriber_text = extract_subscriber_text_from_browse(&data);
+
+    Ok((channel_id, avatar, subscriber_text))
 }
 
-/// Resolve a YouTube handle to the real UC... channel ID from page HTML.
-async fn resolve_channel_id(handle: &str) -> Result<String, String> {
-    let html = fetch_channel_page(handle).await?;
-    extract_channel_id(&html).ok_or_else(|| "Could not find channel ID in page".to_string())
-}
-
-fn extract_channel_id(html: &str) -> Option<String> {
-    for pattern in &["\"externalId\":\"", "\"channelId\":\""] {
-        if let Some(start) = html.find(pattern) {
-            let rest = &html[start + pattern.len()..];
-            if let Some(end) = rest.find('"') {
-                let id = &rest[..end];
-                if id.starts_with("UC") {
-                    return Some(id.to_string());
+/// Extract subscriber count text from an Innertube channel browse response.
+/// Tries the classic c4TabbedHeaderRenderer first, then the newer pageHeaderRenderer.
+fn extract_subscriber_text_from_browse(data: &serde_json::Value) -> String {
+    // Classic header
+    if let Some(s) = data["header"]["c4TabbedHeaderRenderer"]["subscriberCountText"]["simpleText"].as_str() {
+        return s.to_string();
+    }
+    // New pageHeaderRenderer
+    if let Some(rows) = data["header"]["pageHeaderRenderer"]["content"]["pageHeaderViewModel"]["metadata"]["contentMetadataViewModel"]["metadataRows"].as_array() {
+        for row in rows {
+            if let Some(parts) = row["metadataParts"].as_array() {
+                for part in parts {
+                    if let Some(text) = part["text"]["content"].as_str() {
+                        if text.contains("subscriber") {
+                            return text.to_string();
+                        }
+                    }
                 }
             }
         }
     }
-    None
+    String::new()
+}
+
+/// Resolve a YouTube handle to the real UC... channel ID via Innertube.
+async fn resolve_channel_id(handle: &str) -> Result<String, String> {
+    let (channel_id, _, _) = fetch_channel_data_via_innertube(handle).await?;
+    if channel_id.is_empty() {
+        return Err("Could not find channel ID in Innertube response".to_string());
+    }
+    Ok(channel_id)
 }
 
 // ===== Channel Metadata =====
@@ -547,9 +599,9 @@ async fn channel_meta(
         }
     }
 
-    // Not cached — fetch from YouTube
-    let html = match fetch_channel_page(&query.handle).await {
-        Ok(h) => h,
+    // Not cached — fetch from YouTube via Innertube
+    let (channel_id, avatar, subscriber_text) = match fetch_channel_data_via_innertube(&query.handle).await {
+        Ok(d) => d,
         Err(e) => {
             return (
                 StatusCode::BAD_GATEWAY,
@@ -559,10 +611,7 @@ async fn channel_meta(
         }
     };
 
-    let channel_id = extract_channel_id(&html).unwrap_or_default();
-    let avatar = extract_og_meta(&html, "og:image").unwrap_or_default();
-    let description = extract_og_meta(&html, "og:description").unwrap_or_default();
-    let subscriber_text = extract_subscriber_count(&html).unwrap_or_default();
+    let description = String::new();
 
     // Persist to DB if we have a matching channel row
     if !avatar.is_empty() || !subscriber_text.is_empty() {
@@ -580,134 +629,6 @@ async fn channel_meta(
         subscriber_text,
     })
     .into_response()
-}
-
-/// Extract an Open Graph meta tag value from HTML.
-fn extract_og_meta(html: &str, property: &str) -> Option<String> {
-    // Look for <meta property="og:image" content="...">
-    let pattern = format!("property=\"{}\"", property);
-    let pos = html.find(&pattern)?;
-    let region = &html[pos..];
-    // Find content="..." attribute
-    let content_start = region.find("content=\"")? + 9;
-    let rest = &region[content_start..];
-    let end = rest.find('"')?;
-    Some(html_decode(&rest[..end]))
-}
-
-/// Extract subscriber count from the channel page HTML.
-/// YouTube embeds this in several formats depending on the channel.
-fn extract_subscriber_count(html: &str) -> Option<String> {
-    // Strategy 1: "subscriberCountText":{"simpleText":"..."}
-    if let Some(pos) = html.find("\"subscriberCountText\"") {
-        let rest = &html[pos..];
-        if let Some(st) = extract_nested_text(rest, "\"simpleText\":\"") {
-            return Some(st);
-        }
-        if let Some(st) = extract_nested_text(rest, "\"label\":\"") {
-            if st.contains("subscriber") {
-                return Some(st);
-            }
-        }
-    }
-
-    // Strategy 2: "content":"NNK subscribers" inside metadataParts
-    // This is the most common format for many channels
-    {
-        let needle = " subscribers\"";
-        let mut search_from = 0;
-        while let Some(pos) = html[search_from..].find(needle) {
-            let abs_pos = search_from + pos;
-            // Walk backwards to find "content":" before this
-            let start = if abs_pos > 200 { abs_pos - 200 } else { 0 };
-            let region = &html[start..abs_pos];
-            if let Some(content_pos) = region.rfind("\"content\":\"") {
-                let val_start = content_pos + "\"content\":\"".len();
-                let val = &region[val_start..];
-                let decoded = decode_json_unicode(val);
-                let trimmed = decoded.trim();
-                if !trimmed.is_empty() {
-                    return Some(format!("{} subscribers", trimmed));
-                }
-            }
-            search_from = abs_pos + needle.len();
-        }
-    }
-
-    // Strategy 3: Unicode bidi isolate chars around "X subscribers"
-    {
-        let marker = " subscribers";
-        let mut search_from = 0;
-        while let Some(pos) = html[search_from..].find(marker) {
-            let abs_pos = search_from + pos;
-            let before = &html[..abs_pos];
-            if let Some(bidi_start) = before.rfind('\u{2068}') {
-                if abs_pos - bidi_start < 50 {
-                    let count = &html[bidi_start + '\u{2068}'.len_utf8()..abs_pos];
-                    let count = count.trim();
-                    if !count.is_empty() {
-                        return Some(format!("{} subscribers", count));
-                    }
-                }
-            }
-            search_from = abs_pos + marker.len();
-        }
-    }
-
-    None
-}
-
-/// Extract a quoted string value near a JSON key.
-fn extract_nested_text(haystack: &str, key: &str) -> Option<String> {
-    let start = haystack.find(key)?;
-    if start > 300 {
-        return None; // too far, wrong match
-    }
-    let val_start = start + key.len();
-    let rest = &haystack[val_start..];
-    let end = rest.find('"')?;
-    let raw = &rest[..end];
-    // Decode Unicode escapes like \u0026, \u2068 etc.
-    Some(decode_json_unicode(raw))
-}
-
-/// Decode JSON unicode escape sequences and HTML entities.
-fn decode_json_unicode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
-                        if let Some(ch) = char::from_u32(code) {
-                            result.push(ch);
-                            continue;
-                        }
-                    }
-                    result.push_str("\\u");
-                    result.push_str(&hex);
-                }
-                Some(other) => {
-                    result.push('\\');
-                    result.push(other);
-                }
-                None => result.push('\\'),
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    html_decode(&result)
-}
-
-fn html_decode(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
 }
 
 // ===== Image Proxy =====
