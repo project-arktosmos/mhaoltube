@@ -45,7 +45,8 @@
 		"android": "Android",
 		"windows": "Windows",
 		"linux": "Linux",
-		"download": "Download"
+		"download": "Download",
+		"macos_note": "Run xattr -cr /Applications/Mhaoltube.app if blocked by Gatekeeper"
 	},
 	"footer": {
 		"tagline": "Open-source alternative YouTube client",
