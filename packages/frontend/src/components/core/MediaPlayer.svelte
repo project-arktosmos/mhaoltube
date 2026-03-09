@@ -120,53 +120,50 @@
 		mediaEl.muted = !mediaEl.muted;
 	}
 
-	interface WebKitElement extends HTMLElement {
-		webkitRequestFullscreen?: () => Promise<void>;
-	}
-	interface WebKitDocument extends Document {
-		webkitExitFullscreen?: () => Promise<void>;
-		webkitFullscreenElement?: Element | null;
-	}
-
-	function requestFs(el: HTMLElement) {
-		if (el.requestFullscreen) return el.requestFullscreen();
-		if ((el as WebKitElement).webkitRequestFullscreen)
-			return (el as WebKitElement).webkitRequestFullscreen!();
-		return Promise.reject();
-	}
-
-	function exitFs() {
-		if (document.exitFullscreen) return document.exitFullscreen();
-		if ((document as WebKitDocument).webkitExitFullscreen)
-			return (document as WebKitDocument).webkitExitFullscreen!();
-		return Promise.reject();
-	}
-
-	function getFullscreenElement(): Element | null {
-		return (
-			document.fullscreenElement ?? (document as WebKitDocument).webkitFullscreenElement ?? null
-		);
+	interface WebKitVideoElement extends HTMLVideoElement {
+		webkitEnterFullscreen?: () => void;
+		webkitExitFullscreen?: () => void;
+		webkitDisplayingFullscreen?: boolean;
 	}
 
 	function toggleFullscreen() {
-		if (getFullscreenElement()) {
-			exitFs().catch(() => {});
-		} else {
-			const wrapper = mediaEl?.closest('[data-media-player]') as HTMLElement | null;
-			if (wrapper) requestFs(wrapper).catch(() => {});
+		if (!mediaEl || !(mediaEl instanceof HTMLVideoElement)) return;
+		const vid = mediaEl as WebKitVideoElement;
+
+		if (vid.webkitDisplayingFullscreen) {
+			vid.webkitExitFullscreen?.();
+		} else if (vid.webkitEnterFullscreen) {
+			vid.webkitEnterFullscreen();
+		} else if (vid.requestFullscreen) {
+			vid.requestFullscreen().catch(() => {});
 		}
 	}
 
 	function handleFullscreenChange() {
-		fullscreen = !!getFullscreenElement();
+		if (!mediaEl || !(mediaEl instanceof HTMLVideoElement)) {
+			fullscreen = false;
+			return;
+		}
+		const vid = mediaEl as WebKitVideoElement;
+		fullscreen =
+			vid.webkitDisplayingFullscreen ?? (document.fullscreenElement === mediaEl || false);
 	}
 
 	$effect(() => {
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+		const vid = mediaEl;
+		if (vid) {
+			vid.addEventListener('webkitbeginfullscreen', handleFullscreenChange);
+			vid.addEventListener('webkitendfullscreen', handleFullscreenChange);
+		}
 		return () => {
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+			if (vid) {
+				vid.removeEventListener('webkitbeginfullscreen', handleFullscreenChange);
+				vid.removeEventListener('webkitendfullscreen', handleFullscreenChange);
+			}
 		};
 	});
 
