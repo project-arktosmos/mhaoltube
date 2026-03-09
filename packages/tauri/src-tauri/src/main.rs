@@ -41,6 +41,8 @@ async fn run_server() {
 
     state.seed_default_library();
     state.initialize_modules();
+    state.sync_downloads_to_content();
+    state.start_content_sync_task();
 
     let app = api::build_router(state);
 

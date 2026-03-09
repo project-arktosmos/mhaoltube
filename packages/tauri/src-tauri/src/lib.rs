@@ -113,6 +113,101 @@ impl AppState {
         registry.initialize(self);
     }
 
+    /// Backfill `youtube_content` from completed `youtube_downloads` rows.
+    ///
+    /// `youtube_content.upsert()` normally runs inside the SSE stream handler, which only
+    /// executes while a client is actively subscribed. Any download that completed while no
+    /// browser tab was connected never got written to `youtube_content`. This method repairs
+    /// that gap at startup.
+    pub fn sync_downloads_to_content(&self) {
+        let completed = self.youtube_downloads.get_by_state("completed");
+        for row in completed {
+            let Some(ref output_path) = row.output_path else {
+                continue;
+            };
+            if !std::path::Path::new(output_path).exists() {
+                continue;
+            }
+            // mode is stored as a JSON-serialised string, e.g. `"audio"` (with quotes)
+            let mode = row.mode.trim_matches('"');
+            let existing = self.youtube_content.get(&row.video_id);
+            let (video_path, audio_path): (Option<&str>, Option<&str>) = match mode {
+                "audio" => {
+                    if existing.as_ref().map_or(false, |e| e.audio_path.is_some()) {
+                        continue;
+                    }
+                    (None, Some(output_path.as_str()))
+                }
+                "video" => {
+                    if existing.as_ref().map_or(false, |e| e.video_path.is_some()) {
+                        continue;
+                    }
+                    (Some(output_path.as_str()), None)
+                }
+                _ => continue, // "both": can't infer audio vs video from a single output_path
+            };
+            self.youtube_content.upsert(
+                &row.video_id,
+                &row.title,
+                row.thumbnail_url.as_deref(),
+                row.duration_seconds,
+                None,
+                None,
+                video_path,
+                audio_path,
+            );
+        }
+        tracing::info!("[library] synced completed downloads to youtube_content");
+    }
+
+    /// Spawn a background task that writes completed downloads into `youtube_content`.
+    ///
+    /// Unlike the SSE handler, this subscriber runs for the lifetime of the process and
+    /// is not tied to any browser client being connected. Every completed download will
+    /// be recorded in `youtube_content` regardless of SSE state.
+    #[cfg(not(target_os = "android"))]
+    pub fn start_content_sync_task(&self) {
+        use mhaoltube_yt_dlp::{manager::SseEvent, DownloadState};
+        use tokio::sync::broadcast::error::RecvError;
+
+        let mut rx = self.ytdl_manager.subscribe_events();
+        let youtube_content = self.youtube_content.clone();
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(SseEvent::Progress(progress)) => {
+                        if progress.state == DownloadState::Completed {
+                            youtube_content.upsert(
+                                &progress.video_id,
+                                &progress.title,
+                                progress.thumbnail_url.as_deref(),
+                                progress.duration_seconds.map(|d| d as i64),
+                                progress.channel_name.as_deref(),
+                                None,
+                                progress.video_output_path.as_deref(),
+                                progress.audio_output_path.as_deref(),
+                            );
+                            tracing::info!(
+                                "[library] recorded completed download {} ('{}') to youtube_content",
+                                progress.video_id,
+                                progress.title
+                            );
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!("[library] content sync task lagged by {} events", n);
+                    }
+                    Err(RecvError::Closed) => {
+                        tracing::info!("[library] content sync task: channel closed");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
     /// The fixed ID for the single default library.
     pub const DEFAULT_LIBRARY_ID: &'static str = "default";
 
@@ -164,6 +259,8 @@ pub fn run() {
                         .expect("failed to initialize backend");
                     state.seed_default_library();
                     state.initialize_modules();
+                    state.sync_downloads_to_content();
+                    state.start_content_sync_task();
                     let router = api::build_router(state);
                     let addr = format!("{}:{}", SERVER_HOST, SERVER_PORT);
                     let listener = tokio::net::TcpListener::bind(&addr)
