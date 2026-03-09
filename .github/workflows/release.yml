@@ -150,6 +150,17 @@ jobs:
       - name: Install Android SDK components
         run: sdkmanager "ndk;27.0.12077973" "build-tools;36.0.0" "platforms;android-36"
 
+      - name: Set NDK path
+        run: |
+          NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          if [ ! -d "$NDK_PATH" ]; then
+            echo "ERROR: NDK not found at $NDK_PATH"
+            ls -la "$ANDROID_HOME/ndk/" || echo "No NDK directory"
+            exit 1
+          fi
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -175,11 +186,6 @@ jobs:
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           EOF
-
-      - name: Set NDK path
-        run: |
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
 
       - name: Build Android APK
         working-directory: packages/tauri
