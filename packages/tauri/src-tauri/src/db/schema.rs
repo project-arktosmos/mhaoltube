@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS youtube_content (
     channel_id TEXT,
     video_path TEXT,
     audio_path TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    favorited_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -144,6 +146,43 @@ fn has_table(conn: &Connection, name: &str) -> bool {
 }
 
 fn run_migrations(conn: &Connection) {
+    // Migration: add is_favorite column to youtube_content
+    if has_table(conn, "youtube_content") {
+        let has_col: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(youtube_content)").unwrap();
+            let cols: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect();
+            cols.iter().any(|c| c == "is_favorite")
+        };
+        if !has_col {
+            let _ = conn.execute_batch(
+                "ALTER TABLE youtube_content ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;",
+            );
+        }
+    }
+
+    // Migration: add favorited_at column to youtube_content
+    if has_table(conn, "youtube_content") {
+        let has_col: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(youtube_content)").unwrap();
+            let cols: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect();
+            cols.iter().any(|c| c == "favorited_at")
+        };
+        if !has_col {
+            let _ = conn.execute_batch(
+                "ALTER TABLE youtube_content ADD COLUMN favorited_at TEXT;
+                 UPDATE youtube_content SET favorited_at = updated_at WHERE is_favorite = 1;",
+            );
+        }
+    }
+
     // Migration: migrate completed youtube_downloads into youtube_content
     if has_table(conn, "youtube_downloads") && has_table(conn, "youtube_content") {
         let _ = conn.execute_batch(

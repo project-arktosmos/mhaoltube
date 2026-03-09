@@ -12,6 +12,8 @@ pub struct YouTubeContentRow {
     pub channel_id: Option<String>,
     pub video_path: Option<String>,
     pub audio_path: Option<String>,
+    pub is_favorite: bool,
+    pub favorited_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -29,7 +31,7 @@ impl YouTubeContentRepo {
     pub fn get(&self, youtube_id: &str) -> Option<YouTubeContentRow> {
         let conn = self.db.lock();
         conn.query_row(
-            "SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content WHERE youtube_id = ?1",
+            "SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, is_favorite, favorited_at, created_at, updated_at FROM youtube_content WHERE youtube_id = ?1",
             params![youtube_id],
             Self::row_mapper,
         )
@@ -39,7 +41,7 @@ impl YouTubeContentRepo {
     pub fn get_all(&self) -> Vec<YouTubeContentRow> {
         let conn = self.db.lock();
         let mut stmt = conn
-            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content ORDER BY created_at DESC")
+            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, is_favorite, favorited_at, created_at, updated_at FROM youtube_content ORDER BY created_at DESC")
             .unwrap();
         stmt.query_map([], Self::row_mapper)
             .unwrap()
@@ -50,7 +52,7 @@ impl YouTubeContentRepo {
     pub fn get_by_channel(&self, channel_id: &str) -> Vec<YouTubeContentRow> {
         let conn = self.db.lock();
         let mut stmt = conn
-            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, created_at, updated_at FROM youtube_content WHERE channel_id = ?1 ORDER BY created_at DESC")
+            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, is_favorite, favorited_at, created_at, updated_at FROM youtube_content WHERE channel_id = ?1 ORDER BY created_at DESC")
             .unwrap();
         stmt.query_map(params![channel_id], Self::row_mapper)
             .unwrap()
@@ -142,6 +144,34 @@ impl YouTubeContentRepo {
         .unwrap();
     }
 
+    pub fn toggle_favorite(&self, youtube_id: &str) -> bool {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END, favorited_at = CASE WHEN is_favorite = 0 THEN datetime('now') ELSE NULL END WHERE youtube_id = ?1",
+            params![youtube_id],
+        )
+        .unwrap();
+        let is_fav: i32 = conn
+            .query_row(
+                "SELECT is_favorite FROM youtube_content WHERE youtube_id = ?1",
+                params![youtube_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        is_fav != 0
+    }
+
+    pub fn get_favorites(&self) -> Vec<YouTubeContentRow> {
+        let conn = self.db.lock();
+        let mut stmt = conn
+            .prepare("SELECT youtube_id, title, thumbnail_url, duration_seconds, channel_name, channel_id, video_path, audio_path, is_favorite, favorited_at, created_at, updated_at FROM youtube_content WHERE is_favorite = 1 ORDER BY favorited_at DESC")
+            .unwrap();
+        stmt.query_map([], Self::row_mapper)
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
     pub fn delete(&self, youtube_id: &str) {
         let conn = self.db.lock();
         conn.execute(
@@ -161,8 +191,10 @@ impl YouTubeContentRepo {
             channel_id: row.get(5)?,
             video_path: row.get(6)?,
             audio_path: row.get(7)?,
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
+            is_favorite: row.get::<_, i32>(8)? != 0,
+            favorited_at: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
         })
     }
 }

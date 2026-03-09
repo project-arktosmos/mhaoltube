@@ -170,6 +170,8 @@ export interface YouTubeContent {
 	hasAudio: boolean;
 	videoSize: number | null;
 	audioSize: number | null;
+	isFavorite: boolean;
+	favoritedAt: string | null;
 	createdAt: string;
 }
 

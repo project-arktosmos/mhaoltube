@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde::Serialize;
@@ -11,8 +11,10 @@ use serde::Serialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_all_content))
+        .route("/favorites", get(get_favorites))
         .route("/fill-durations", post(fill_durations))
         .route("/{youtube_id}", get(get_content))
+        .route("/{youtube_id}/favorite", put(toggle_favorite))
         .route("/{youtube_id}/audio", delete(delete_audio))
         .route("/{youtube_id}/video", delete(delete_video))
 }
@@ -38,6 +40,10 @@ struct YouTubeContentResponse {
     video_size: Option<u64>,
     #[serde(rename = "audioSize")]
     audio_size: Option<u64>,
+    #[serde(rename = "isFavorite")]
+    is_favorite: bool,
+    #[serde(rename = "favoritedAt")]
+    favorited_at: Option<String>,
     #[serde(rename = "createdAt")]
     created_at: String,
 }
@@ -52,6 +58,8 @@ fn map_content(row: crate::db::repo::youtube_content::YouTubeContentRow) -> YouT
         has_audio: row.audio_path.is_some(),
         video_size: file_size(row.video_path.as_deref()),
         audio_size: file_size(row.audio_path.as_deref()),
+        is_favorite: row.is_favorite,
+        favorited_at: row.favorited_at,
         youtube_id: row.youtube_id,
         title: row.title,
         thumbnail_url: row.thumbnail_url,
@@ -68,6 +76,12 @@ async fn get_all_content(State(state): State<AppState>) -> impl IntoResponse {
     Json(content)
 }
 
+async fn get_favorites(State(state): State<AppState>) -> impl IntoResponse {
+    let rows = state.youtube_content.get_favorites();
+    let content: Vec<YouTubeContentResponse> = rows.into_iter().map(map_content).collect();
+    Json(content)
+}
+
 async fn get_content(
     State(state): State<AppState>,
     Path(youtube_id): Path<String>,
@@ -76,6 +90,17 @@ async fn get_content(
         Some(row) => Json(map_content(row)).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+async fn toggle_favorite(
+    State(state): State<AppState>,
+    Path(youtube_id): Path<String>,
+) -> impl IntoResponse {
+    if state.youtube_content.get(&youtube_id).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let is_favorite = state.youtube_content.toggle_favorite(&youtube_id);
+    Json(serde_json::json!({ "isFavorite": is_favorite })).into_response()
 }
 
 async fn delete_audio(
