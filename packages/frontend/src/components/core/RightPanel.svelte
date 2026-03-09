@@ -43,6 +43,7 @@
 
 	let downloadingAudio = $state(false);
 	let downloadingVideo = $state(false);
+	let togglingFavorite = $state(false);
 	let deletingAudio = $state(false);
 	let deletingVideo = $state(false);
 
@@ -51,6 +52,15 @@
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 		if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 		return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+	}
+
+	let isFavorite = $derived(liveContent?.isFavorite ?? false);
+
+	async function handleToggleFavorite() {
+		if (!video || togglingFavorite) return;
+		togglingFavorite = true;
+		await libraryService.toggleFavorite(video.videoId);
+		togglingFavorite = false;
 	}
 
 	async function handleDeleteAudio() {
@@ -128,12 +138,51 @@
 						<source src={libraryService.streamAudioUrl(video.videoId)} type="audio/x-m4a" />
 					</audio>
 				{:else}
-					<img src={video.thumbnail} alt={video.title} class="w-full rounded-lg object-cover" />
+					<iframe
+						src="https://www.youtube.com/embed/{video.videoId}"
+						title={video.title}
+						class="aspect-video w-full rounded-lg"
+						frameborder="0"
+						allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+						allowfullscreen
+					></iframe>
 				{/if}
 			{/key}
 
 			<div class="flex flex-col gap-1">
-				<p class="leading-snug font-medium">{video.title}</p>
+				<div class="flex items-start justify-between gap-2">
+					<p class="leading-snug font-medium">{video.title}</p>
+					{#if liveContent}
+						<button
+							class={classNames(
+								'btn btn-circle shrink-0 btn-ghost btn-sm',
+								isFavorite ? 'text-error' : 'text-base-content/30'
+							)}
+							disabled={togglingFavorite}
+							onclick={handleToggleFavorite}
+							aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+						>
+							{#if togglingFavorite}
+								<span class="loading loading-xs loading-spinner"></span>
+							{:else}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill={isFavorite ? 'currentColor' : 'none'}
+									stroke="currentColor"
+									stroke-width="2"
+									class="h-5 w-5"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
+									/>
+								</svg>
+							{/if}
+						</button>
+					{/if}
+				</div>
 				{#if video.uploaderName}
 					<div class="mt-1 flex items-center gap-2">
 						{#if video.uploaderAvatar}
