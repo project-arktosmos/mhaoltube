@@ -6,3 +6,14 @@ export interface Library {
 	path: string;
 	dateAdded: number;
 }
+
+export interface LibraryFsEntry {
+	name: string;
+	size: number;
+}
+
+export interface LibraryFs {
+	path: string;
+	audio: LibraryFsEntry[];
+	video: LibraryFsEntry[];
+}
