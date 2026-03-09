@@ -18,6 +18,9 @@ const config = {
 			precompress: false,
 			strict: false // This tells the adapter to ignore dynamic routes
 		}),
+		paths: {
+			base: '/mhaoltube'
+		},
 		alias: {
 			$components: 'src/components/*',
 			$utils: 'src/utils/*',
