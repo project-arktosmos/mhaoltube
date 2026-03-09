@@ -1,11 +1,14 @@
 use crate::AppState;
 use axum::{
+    body::Body,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, Response, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
 use serde::Serialize;
 
 pub fn router() -> Router<AppState> {
@@ -103,6 +106,7 @@ async fn get_default_library(State(state): State<AppState>) -> impl IntoResponse
 async fn stream_video(
     State(state): State<AppState>,
     Path(youtube_id): Path<String>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let content = match state.youtube_content.get(&youtube_id) {
         Some(c) => c,
@@ -114,12 +118,18 @@ async fn stream_video(
         None => return StatusCode::NOT_FOUND.into_response(),
     };
 
-    stream_file(&path_str).await
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    stream_file(&path_str, range.as_deref()).await
 }
 
 async fn stream_audio(
     State(state): State<AppState>,
     Path(youtube_id): Path<String>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let content = match state.youtube_content.get(&youtube_id) {
         Some(c) => c,
@@ -131,14 +141,25 @@ async fn stream_audio(
         None => return StatusCode::NOT_FOUND.into_response(),
     };
 
-    stream_file(&path_str).await
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    stream_file(&path_str, range.as_deref()).await
 }
 
-async fn stream_file(path_str: &str) -> axum::response::Response {
+pub(crate) async fn stream_file(path_str: &str, range_header: Option<&str>) -> axum::response::Response {
     let path = std::path::Path::new(path_str);
-    let bytes = match tokio::fs::read(path).await {
-        Ok(b) => b,
+
+    let file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let file_size = match file.metadata().await {
+        Ok(m) => m.len(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
     let content_type = match path.extension().and_then(|e| e.to_str()) {
@@ -157,5 +178,56 @@ async fn stream_file(path_str: &str) -> axum::response::Response {
         _ => "application/octet-stream",
     };
 
-    ([(header::CONTENT_TYPE, content_type)], bytes).into_response()
+    if let Some(range_str) = range_header {
+        if let Some(range_val) = range_str.strip_prefix("bytes=") {
+            let parts: Vec<&str> = range_val.splitn(2, '-').collect();
+            if parts.len() == 2 {
+                let start: u64 = parts[0].parse().unwrap_or(0);
+                let end: u64 = parts[1]
+                    .parse()
+                    .unwrap_or_else(|_| file_size.saturating_sub(1))
+                    .min(file_size.saturating_sub(1));
+
+                if start >= file_size || start > end {
+                    return Response::builder()
+                        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                        .header(header::CONTENT_RANGE, format!("bytes */{}", file_size))
+                        .body(Body::empty())
+                        .unwrap();
+                }
+
+                let length = end - start + 1;
+                let mut file = file;
+
+                if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+
+                let limited = file.take(length);
+                let stream = ReaderStream::new(limited);
+
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_TYPE, content_type)
+                    .header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {}-{}/{}", start, end, file_size),
+                    )
+                    .header(header::CONTENT_LENGTH, length.to_string())
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .body(Body::from_stream(stream))
+                    .unwrap();
+            }
+        }
+    }
+
+    // No Range header — stream entire file
+    let stream = ReaderStream::new(file);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, file_size.to_string())
+        .header(header::ACCEPT_RANGES, "bytes")
+        .body(Body::from_stream(stream))
+        .unwrap()
 }

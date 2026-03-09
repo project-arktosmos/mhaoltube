@@ -26,8 +26,24 @@
 	let playerMode = $state<'audio' | 'video' | null>(null);
 	let audioEl = $state<HTMLAudioElement | null>(null);
 
+	// Video src: use in-progress stream during download, final stream once complete
+	let videoSrc = $derived(
+		video?.hasVideo
+			? libraryService.streamVideoUrl(video.videoId)
+			: activeDownload?.videoOutputPath && ['downloading', 'muxing'].includes(activeDownload.state)
+				? libraryService.streamDownloadVideoUrl(activeDownload.downloadId)
+				: null
+	);
+
 	$effect(() => {
 		if (video) playerMode = null;
+	});
+
+	// Auto-show video player as soon as a streamable source is available
+	$effect(() => {
+		if (videoSrc && playerMode !== 'video') {
+			playerMode = 'video';
+		}
 	});
 
 	$effect(() => {
@@ -38,7 +54,10 @@
 
 	$effect(() => {
 		const v = video;
-		if (!v) { autoStartedId = null; return; }
+		if (!v) {
+			autoStartedId = null;
+			return;
+		}
 		if (v.videoId === autoStartedId) return;
 
 		const downloads = get(youtubeService.state).downloads;
@@ -112,7 +131,7 @@
 	{#if video}
 		<div class="flex min-w-80 flex-col gap-4 p-4">
 			<div class="flex items-center justify-between">
-				<h3 class="text-xs font-semibold tracking-widest opacity-50 uppercase">Video</h3>
+				<h3 class="text-xs font-semibold tracking-widest uppercase opacity-50">Video</h3>
 				<button
 					class="btn btn-circle btn-ghost btn-xs"
 					onclick={() => rightPanelService.close()}
@@ -122,15 +141,10 @@
 				</button>
 			</div>
 
-			{#if playerMode === 'video'}
+			{#if playerMode === 'video' && videoSrc}
 				<!-- svelte-ignore a11y_media_has_caption -->
-				<video
-					controls
-					autoplay
-					src={libraryService.streamVideoUrl(video.videoId)}
-					class="w-full rounded-lg"
-				>
-					<source src={libraryService.streamVideoUrl(video.videoId)} type="video/mp4" />
+				<video controls autoplay src={videoSrc} class="w-full rounded-lg">
+					<source src={videoSrc} type="video/mp4" />
 				</video>
 			{:else}
 				<img src={video.thumbnail} alt={video.title} class="w-full rounded-lg object-cover" />
@@ -142,11 +156,15 @@
 			{/if}
 
 			<div class="flex flex-col gap-1">
-				<p class="font-medium leading-snug">{video.title}</p>
+				<p class="leading-snug font-medium">{video.title}</p>
 				{#if video.uploaderName}
 					<div class="mt-1 flex items-center gap-2">
 						{#if video.uploaderAvatar}
-							<img src={video.uploaderAvatar} alt={video.uploaderName} class="h-4 w-4 rounded-full" />
+							<img
+								src={video.uploaderAvatar}
+								alt={video.uploaderName}
+								class="h-4 w-4 rounded-full"
+							/>
 						{/if}
 						<span class="text-sm text-base-content/60">{video.uploaderName}</span>
 						{#if video.uploaderVerified}
@@ -162,20 +180,24 @@
 				{/if}
 			</div>
 
-			{#if video.hasVideo || video.hasAudio}
+			{#if video.hasVideo || video.hasAudio || videoSrc}
 				<div class="divider my-0 text-xs opacity-50">Play</div>
 				<div class="flex flex-col gap-2">
-					{#if video.hasVideo}
+					{#if video.hasVideo || videoSrc}
 						<button
-							class={classNames('btn btn-secondary btn-sm w-full gap-2', { 'btn-active': playerMode === 'video' })}
+							class={classNames('btn w-full gap-2 btn-sm btn-secondary', {
+								'btn-active': playerMode === 'video'
+							})}
 							onclick={() => (playerMode = playerMode === 'video' ? null : 'video')}
 						>
-							▶ Play Video
+							▶ {video.hasVideo ? 'Play Video' : 'Play (downloading…)'}
 						</button>
 					{/if}
 					{#if video.hasAudio}
 						<button
-							class={classNames('btn btn-primary btn-sm w-full gap-2', { 'btn-active': playerMode === 'audio' })}
+							class={classNames('btn w-full gap-2 btn-sm btn-primary', {
+								'btn-active': playerMode === 'audio'
+							})}
 							onclick={() => (playerMode = playerMode === 'audio' ? null : 'audio')}
 						>
 							♪ Play Audio
@@ -183,7 +205,6 @@
 					{/if}
 				</div>
 			{/if}
-
 
 			{#if activeDownload}
 				<div class="divider my-0 text-xs opacity-50">Download Progress</div>
@@ -196,7 +217,7 @@
 					</div>
 					{#if activeDownload.state === 'downloading' || activeDownload.state === 'muxing'}
 						<progress
-							class="progress progress-primary w-full"
+							class="progress w-full progress-primary"
 							value={activeDownload.progress}
 							max="1"
 						></progress>
@@ -204,11 +225,11 @@
 							{Math.round(activeDownload.progress * 100)}%
 						</p>
 					{:else if activeDownload.state === 'completed'}
-						<progress class="progress progress-success w-full" value="1" max="1"></progress>
+						<progress class="progress w-full progress-success" value="1" max="1"></progress>
 					{:else if activeDownload.state === 'failed'}
 						<p class="text-xs text-error">{activeDownload.error ?? 'Download failed'}</p>
 					{:else}
-						<progress class="progress progress-primary w-full"></progress>
+						<progress class="progress w-full progress-primary"></progress>
 					{/if}
 				</div>
 			{/if}
@@ -217,12 +238,12 @@
 
 			<div class="flex flex-col gap-2">
 				<button
-					class="btn btn-primary btn-sm w-full gap-2"
+					class="btn w-full gap-2 btn-sm btn-primary"
 					disabled={audioDisabled}
 					onclick={() => handleDownload('audio')}
 				>
 					{#if downloadingAudio || audioInProgress}
-						<span class="loading loading-spinner loading-xs"></span>
+						<span class="loading loading-xs loading-spinner"></span>
 					{/if}
 					Audio only
 					{#if audioDone}
@@ -231,12 +252,12 @@
 				</button>
 
 				<button
-					class="btn btn-secondary btn-sm w-full gap-2"
+					class="btn w-full gap-2 btn-sm btn-secondary"
 					disabled={videoDisabled}
 					onclick={() => handleDownload('video')}
 				>
 					{#if downloadingVideo || videoInProgress}
-						<span class="loading loading-spinner loading-xs"></span>
+						<span class="loading loading-xs loading-spinner"></span>
 					{/if}
 					Video
 					{#if videoDone}
@@ -245,12 +266,12 @@
 				</button>
 
 				<button
-					class="btn btn-accent btn-sm w-full gap-2"
+					class="btn w-full gap-2 btn-sm btn-accent"
 					disabled={bothDisabled}
 					onclick={() => handleDownload('both')}
 				>
 					{#if downloadingBoth || bothInProgress}
-						<span class="loading loading-spinner loading-xs"></span>
+						<span class="loading loading-xs loading-spinner"></span>
 					{/if}
 					Audio + Video
 					{#if bothDone}

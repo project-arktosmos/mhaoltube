@@ -63,6 +63,10 @@ class LibraryService {
 		return apiUrl(`/api/libraries/content/${youtubeId}/stream/audio`);
 	}
 
+	streamDownloadVideoUrl(downloadId: string): string {
+		return apiUrl(`/api/ytdl/downloads/${downloadId}/stream/video`);
+	}
+
 	private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 		const response = await fetch(apiUrl(path), {
 			...init,

@@ -49,7 +49,7 @@ pub struct PipelineOutput {
 #[derive(Debug, Clone)]
 pub enum PipelineState {
     Fetching,
-    Downloading { downloaded: u64, total: u64 },
+    Downloading { downloaded: u64, total: u64, video_path: Option<String> },
     Muxing,
     Completed { output: PipelineOutput },
     Failed { error: String },
@@ -265,7 +265,7 @@ impl DownloadPipeline {
                             let muxed_tmp = audio_output_dir
                                 .join(format!("{}.muxed.tmp.{}", file_stem, muxed.output_extension));
                             self.download_single_with_retry(
-                                &muxed.audio, &muxed_tmp, config, &state_tx,
+                                &muxed.audio, &muxed_tmp, false, config, &state_tx,
                                 cancel_rx.clone(), http_client, &download_headers,
                             ).await?;
                             if self.muxer.is_available() {
@@ -358,8 +358,8 @@ impl DownloadPipeline {
             self.download_and_mux(config, selected, output_dir, &video_final, state_tx, cancel_rx.clone(), http_client, download_headers)
                 .await?;
         } else {
-            // Muxed stream — download it as the video file
-            self.download_single_with_retry(&selected.audio, &video_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+            // Muxed stream — download it as the video file (expose path for streaming)
+            self.download_single_with_retry(&selected.audio, &video_final, true, config, state_tx, cancel_rx.clone(), http_client, download_headers)
                 .await?;
         }
 
@@ -458,7 +458,8 @@ impl DownloadPipeline {
             self.download_and_mux(config, selected, output_dir, final_output, state_tx, cancel_rx, http_client, download_headers)
                 .await?;
         } else {
-            self.download_single_with_retry(&selected.audio, final_output, config, state_tx, cancel_rx, http_client, download_headers)
+            let expose = config.mode == DownloadMode::Video;
+            self.download_single_with_retry(&selected.audio, final_output, expose, config, state_tx, cancel_rx, http_client, download_headers)
                 .await?;
         }
 
@@ -704,12 +705,19 @@ impl DownloadPipeline {
         &self,
         format: &ResolvedFormat,
         output_path: &Path,
+        expose_video_path: bool,
         _config: &DownloadTaskConfig,
         state_tx: &watch::Sender<PipelineState>,
         cancel_rx: watch::Receiver<bool>,
         http_client: &reqwest::Client,
         download_headers: &HeaderMap,
     ) -> Result<()> {
+        let video_path_for_sse: Option<String> = if expose_video_path {
+            Some(output_path.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+
         let (progress_tx, mut progress_rx) = watch::channel(DownloadProgressUpdate {
             downloaded_bytes: 0,
             total_bytes: 0,
@@ -722,6 +730,7 @@ impl DownloadPipeline {
                 let _ = state_tx_clone.send(PipelineState::Downloading {
                     downloaded: update.downloaded_bytes,
                     total: update.total_bytes,
+                    video_path: video_path_for_sse.clone(),
                 });
             }
         });
@@ -747,13 +756,14 @@ impl DownloadPipeline {
         &self,
         format: &ResolvedFormat,
         output_path: &Path,
+        expose_video_path: bool,
         config: &DownloadTaskConfig,
         state_tx: &watch::Sender<PipelineState>,
         cancel_rx: watch::Receiver<bool>,
         http_client: &reqwest::Client,
         download_headers: &HeaderMap,
     ) -> Result<()> {
-        match self.download_single(format, output_path, config, state_tx, cancel_rx.clone(), http_client, download_headers).await {
+        match self.download_single(format, output_path, expose_video_path, config, state_tx, cancel_rx.clone(), http_client, download_headers).await {
             Ok(()) => Ok(()),
             Err(e) if e.to_string().contains("403") => {
                 log::warn!("CDN 403 for itag {} — invalidating player.js cache and retrying", format.itag);
@@ -766,7 +776,7 @@ impl DownloadPipeline {
                     signatures::apply_n_param(&format.url, &resolver).unwrap_or_else(|_| format.url.clone())
                 };
                 let refreshed = ResolvedFormat { url: refreshed_url, ..format.clone() };
-                self.download_single(&refreshed, output_path, config, state_tx, cancel_rx, http_client, download_headers).await
+                self.download_single(&refreshed, output_path, expose_video_path, config, state_tx, cancel_rx, http_client, download_headers).await
             }
             Err(e) => Err(e),
         }
@@ -816,7 +826,7 @@ impl DownloadPipeline {
         download_headers: &HeaderMap,
     ) -> Result<()> {
         let result = self.download_single_with_retry(
-            format, output_path, config, state_tx, cancel_rx.clone(), http_client, download_headers,
+            format, output_path, false, config, state_tx, cancel_rx.clone(), http_client, download_headers,
         ).await;
 
         match result {
@@ -865,7 +875,7 @@ impl DownloadPipeline {
                                     s.audio.itag
                                 );
                                 self.download_single_with_retry(
-                                    &s.audio, output_path, config, state_tx, cancel_rx,
+                                    &s.audio, output_path, false, config, state_tx, cancel_rx,
                                     http_client, &web_headers,
                                 ).await
                             }
@@ -902,8 +912,8 @@ impl DownloadPipeline {
         let video_tmp = output_dir.join(format!("{}.video.tmp.{}", file_stem, video_format.container));
         let audio_tmp = output_dir.join(format!("{}.audio.tmp.{}", file_stem, audio_format.container));
 
-        // Download video
-        self.download_single_with_retry(video_format, &video_tmp, config, state_tx, cancel_rx.clone(), http_client, download_headers)
+        // Download video (expose path so the frontend can stream it while it downloads)
+        self.download_single_with_retry(video_format, &video_tmp, true, config, state_tx, cancel_rx.clone(), http_client, download_headers)
             .await?;
 
         if *cancel_rx.borrow() {
@@ -911,8 +921,8 @@ impl DownloadPipeline {
             return Err(YtDlpError::Cancelled.into());
         }
 
-        // Download audio
-        self.download_single_with_retry(audio_format, &audio_tmp, config, state_tx, cancel_rx, http_client, download_headers)
+        // Download audio (not a video stream, don't expose path)
+        self.download_single_with_retry(audio_format, &audio_tmp, false, config, state_tx, cancel_rx, http_client, download_headers)
             .await?;
 
         // Mux

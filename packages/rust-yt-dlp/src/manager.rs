@@ -355,7 +355,7 @@ impl DownloadManager {
                         PipelineState::Fetching => {
                             progress.state = DownloadState::Fetching;
                         }
-                        PipelineState::Downloading { downloaded, total } => {
+                        PipelineState::Downloading { downloaded, total, video_path } => {
                             progress.state = DownloadState::Downloading;
                             progress.downloaded_bytes = *downloaded;
                             progress.total_bytes = *total;
@@ -364,9 +364,15 @@ impl DownloadManager {
                             } else {
                                 0.0
                             };
+                            // Only set once; never clear (preserves the video path during
+                            // the subsequent audio download in 'both' mode)
+                            if let Some(ref path) = video_path {
+                                progress.video_output_path = Some(path.clone());
+                            }
                         }
                         PipelineState::Muxing => {
                             progress.state = DownloadState::Muxing;
+                            progress.progress = 0.0;
                         }
                         PipelineState::Completed { output } => {
                             progress.state = DownloadState::Completed;

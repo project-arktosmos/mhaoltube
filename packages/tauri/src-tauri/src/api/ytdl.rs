@@ -1,7 +1,7 @@
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive},
         IntoResponse, Sse,
@@ -22,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/downloads/queue", delete(clear_queue))
         .route("/downloads/playlist", post(queue_playlist))
         .route("/downloads/events", get(download_events))
+        .route("/downloads/{id}/stream/video", get(stream_download_video))
         .route("/info/video", get(video_info))
         .route("/info/playlist", get(playlist_info))
         .route("/settings", get(get_settings).put(update_settings))
@@ -337,4 +338,31 @@ async fn ytdlp_status(State(_state): State<AppState>) -> impl IntoResponse {
         "version": format!("native-rust-{}", env!("CARGO_PKG_VERSION")),
         "downloading": false,
     }))
+}
+
+async fn stream_download_video(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let progress = match state.ytdl_manager.get_progress(&id) {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let path_str = match progress.video_output_path {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if !std::path::Path::new(&path_str).exists() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let range = headers
+        .get(axum::http::header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    crate::api::libraries::stream_file(&path_str, range.as_deref()).await
 }
