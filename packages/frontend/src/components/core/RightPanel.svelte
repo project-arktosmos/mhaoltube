@@ -5,6 +5,7 @@
 	import { youtubeService } from '$services/youtube.service';
 	import { mediaModeService } from '$services/media-mode.service';
 	import { getStateLabel, getStateColor } from '$types/youtube.type';
+	import MediaPlayer from '$components/core/MediaPlayer.svelte';
 
 	const panelStore = rightPanelService.store;
 	const ytState = youtubeService.state;
@@ -13,8 +14,6 @@
 	let mediaMode = $derived($mediaModeStore);
 
 	let video = $derived($panelStore.video);
-	let isOpen = $derived(video !== null);
-
 	let liveContent = $derived(
 		video ? ($libState.content.find((c) => c.youtubeId === video!.videoId) ?? null) : null
 	);
@@ -30,16 +29,10 @@
 			null
 	);
 
-	let audioEl = $state<HTMLAudioElement | null>(null);
-
 	let hasVideo = $derived(liveContent?.hasVideo ?? false);
 	let hasAudio = $derived(liveContent?.hasAudio ?? false);
 
 	let videoSrc = $derived(hasVideo ? libraryService.streamVideoUrl(video!.videoId) : null);
-
-	$effect(() => {
-		if (audioEl) audioEl.play().catch(() => {});
-	});
 
 	let downloadingAudio = $state(false);
 	let downloadingVideo = $state(false);
@@ -133,8 +126,7 @@
 
 	let wrapperClasses = $derived(
 		classNames(
-			'flex flex-col bg-base-200 border-l border-base-300 overflow-y-auto transition-[width] duration-200',
-			isOpen ? 'w-80' : 'w-0 overflow-hidden'
+			'flex flex-col bg-base-200 border-l border-base-300 overflow-y-auto overflow-x-hidden w-[26.75rem]'
 		)
 	);
 
@@ -153,7 +145,7 @@
 
 <aside class={wrapperClasses}>
 	{#if video}
-		<div class="flex min-w-80 flex-col gap-4 p-4">
+		<div class="flex min-w-[26.75rem] flex-col gap-4 p-4">
 			<div class="flex items-center justify-between">
 				<h3 class="text-xs font-semibold tracking-widest uppercase opacity-50">
 					{mediaMode === 'audio' ? 'Audio' : 'Video'}
@@ -169,33 +161,25 @@
 
 			{#key video.videoId}
 				{#if mediaMode === 'video' && videoSrc}
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video controls autoplay src={videoSrc} class="w-full rounded-lg">
-						<source src={videoSrc} type="video/mp4" />
-					</video>
+					<MediaPlayer source={{ type: 'video', src: videoSrc }} />
 				{:else if mediaMode === 'audio' && hasAudio}
-					<img src={video.thumbnail} alt={video.title} class="w-full rounded-lg object-cover" />
-					<audio bind:this={audioEl} controls autoplay class="w-full">
-						<source src={libraryService.streamAudioUrl(video.videoId)} type="audio/x-m4a" />
-					</audio>
+					<MediaPlayer
+						source={{
+							type: 'audio',
+							src: libraryService.streamAudioUrl(video.videoId),
+							thumbnail: video.thumbnail
+						}}
+					/>
 				{:else if streamLoading}
 					<div class="flex aspect-video w-full items-center justify-center rounded-lg bg-base-300">
 						<span class="loading loading-md loading-spinner"></span>
 					</div>
 				{:else if streamUrl}
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video controls autoplay class="aspect-video w-full rounded-lg">
-						<source src={streamUrl} type={streamMimeType ?? 'video/mp4'} />
-					</video>
+					<MediaPlayer
+						source={{ type: 'video', src: streamUrl, mimeType: streamMimeType ?? 'video/mp4' }}
+					/>
 				{:else}
-					<iframe
-						src="https://www.youtube.com/embed/{video.videoId}"
-						title={video.title}
-						class="aspect-video w-full rounded-lg"
-						frameborder="0"
-						allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-						allowfullscreen
-					></iframe>
+					<MediaPlayer source={{ type: 'youtube', videoId: video.videoId, title: video.title }} />
 				{/if}
 			{/key}
 
