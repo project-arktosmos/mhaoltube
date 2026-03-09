@@ -166,71 +166,83 @@ async fn get_table(
 }
 
 async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
-    // Clean the library directory of all non-DB files (downloaded media, subdirs, etc.)
+    // Step 1: Wipe media files (audio/ and video/ subdirs) without touching the
+    // live SQLite db file. Deleting the db file while the connection is open
+    // causes the WAL salt to mismatch on the next write, silently discarding
+    // DDL changes and leaving the old data in place.
     let library_dir = crate::default_data_dir();
-    if library_dir.exists() {
-        for entry in std::fs::read_dir(&library_dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with("mhaoltube.db") {
-                continue;
-            }
-            if path.is_dir() {
-                let _ = std::fs::remove_dir_all(&path);
-            } else {
-                let _ = std::fs::remove_file(&path);
-            }
+    for subdir in &["audio", "video"] {
+        let dir = library_dir.join(subdir);
+        if dir.exists() {
+            let _ = std::fs::remove_dir_all(&dir);
         }
-        tracing::info!("Cleaned library directory: {}", library_dir.display());
     }
 
-    let conn = state.db.lock();
+    // Step 2: Ensure the library directory and media subdirs exist.
+    std::fs::create_dir_all(&library_dir).ok();
 
-    // Drop all triggers and tables, then reinitialize
-    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    // Step 3 & 4: Drop everything in the db and regenerate schema + seed data.
+    {
+        let conn = state.db.lock();
 
-    let triggers: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")
-            .unwrap();
-        stmt.query_map([], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-    };
-    for trigger in &triggers {
-        conn.execute_batch(&format!("DROP TRIGGER IF EXISTS \"{}\"", trigger))
-            .unwrap();
-    }
+        conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
 
-    let tables: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-            .unwrap();
-        stmt.query_map([], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-    };
-    for table in &tables {
-        conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{}\"", table))
-            .unwrap();
-    }
+        let triggers: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        for trigger in &triggers {
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS \"{}\"", trigger))
+                .unwrap();
+        }
 
-    conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
+        let tables: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        for table in &tables {
+            conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{}\"", table))
+                .unwrap();
+        }
 
-    crate::db::schema::initialize_schema(&conn).unwrap();
-    crate::db::schema::initialize_module_schemas(&conn).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
 
-    // Release the lock before calling seed_default_library (which acquires it via repos)
-    drop(conn);
+        crate::db::schema::initialize_schema(&conn).unwrap();
+        crate::db::schema::initialize_module_schemas(&conn).unwrap();
+    } // mutex released here
 
+    // Step 4 (continued): seed the default library record.
     state.seed_default_library();
 
-    let conn = state.db.lock();
+    // Always recreate media subdirs — seed_default_library only creates them
+    // when inserting a new library row, so an explicit pass here ensures they
+    // exist regardless of guard conditions.
+    for subdir in &["audio", "video"] {
+        let dir = library_dir.join(subdir);
+        std::fs::create_dir_all(dir.join(".cache")).ok();
+    }
+
+    // Re-seed module settings (ModuleRegistry.initialize() only runs once at
+    // startup, so we re-apply defaults manually after a reset).
+    state.module_registry.read().seed_settings(&state);
+
+    // Sync the library: scan audio/ and video/ on disk and reconcile with
+    // the youtube_content table so the DB reflects actual filesystem state.
+    sync_library(&state);
 
     tracing::info!("Database reset complete");
 
+    let conn = state.db.lock();
     let new_tables: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -242,6 +254,42 @@ async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
     };
 
     Json(serde_json::json!({ "ok": true, "tables": new_tables }))
+}
+
+/// Scan the library's audio/ and video/ subdirectories and remove any
+/// youtube_content rows whose files no longer exist on disk.
+fn sync_library(state: &crate::AppState) {
+    let library_dir = crate::default_data_dir();
+    let rows = state.youtube_content.get_all();
+
+    for row in rows {
+        let video_ok = row
+            .video_path
+            .as_deref()
+            .map(|p| std::path::Path::new(p).exists())
+            .unwrap_or(true);
+        let audio_ok = row
+            .audio_path
+            .as_deref()
+            .map(|p| std::path::Path::new(p).exists())
+            .unwrap_or(true);
+
+        if !video_ok && !audio_ok {
+            state.youtube_content.delete(&row.youtube_id);
+        } else {
+            if !video_ok {
+                state.youtube_content.clear_video_path(&row.youtube_id);
+            }
+            if !audio_ok {
+                state.youtube_content.clear_audio_path(&row.youtube_id);
+            }
+        }
+    }
+
+    tracing::info!(
+        "Library sync complete (scanned {})",
+        library_dir.display()
+    );
 }
 
 fn get_table_columns(conn: &rusqlite::Connection, table: &str) -> Vec<ColumnInfo> {

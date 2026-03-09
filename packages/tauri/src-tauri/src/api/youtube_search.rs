@@ -112,6 +112,7 @@ async fn search(
         .header("X-YouTube-Client-Name", "1")
         .header("X-YouTube-Client-Version", "2.20260301.01.00")
         .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/")
         .json(&body)
         .send()
         .await

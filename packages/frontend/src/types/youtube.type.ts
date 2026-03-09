@@ -297,6 +297,22 @@ export interface YouTubeChannelMeta {
 	subscriberText: string;
 }
 
+// ===== Right Panel =====
+
+export interface RightPanelVideo {
+	videoId: string;
+	title: string;
+	thumbnail: string;
+	views?: number;
+	viewsText?: string;
+	publishedText?: string;
+	uploaderName?: string;
+	uploaderAvatar?: string;
+	uploaderVerified?: boolean;
+	hasVideo?: boolean;
+	hasAudio?: boolean;
+}
+
 // ===== Channel RSS Feed =====
 
 export interface YouTubeRssVideo {

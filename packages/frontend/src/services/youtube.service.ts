@@ -73,10 +73,11 @@ class YouTubeService {
 		this.state.update((s) => ({ ...s, loading: true }));
 
 		try {
-			const [stats, downloaderStatus, settings] = await Promise.all([
+			const [stats, downloaderStatus, settings, downloads] = await Promise.all([
 				this.fetchJson<YouTubeManagerStats>('/api/ytdl/status'),
 				this.fetchJson<DownloaderStatus>('/api/ytdl/ytdlp/status'),
-				this.fetchJson<Omit<YouTubeSettings, 'id'>>('/api/ytdl/settings')
+				this.fetchJson<Omit<YouTubeSettings, 'id'>>('/api/ytdl/settings'),
+				this.fetchJson<YouTubeDownloadProgress[]>('/api/ytdl/downloads')
 			]);
 
 			// Populate the settings store from database
@@ -88,6 +89,7 @@ class YouTubeService {
 				loading: false,
 				stats,
 				downloaderStatus,
+				downloads,
 				error: null
 			}));
 
@@ -353,6 +355,51 @@ class YouTubeService {
 		};
 
 		if (settings.downloadMode === 'video' || settings.downloadMode === 'both') {
+			body.videoQuality = settings.defaultVideoQuality;
+			body.videoFormat = settings.defaultVideoFormat;
+		}
+
+		try {
+			const result = await this.fetchJson<{ downloadId: string }>('/api/ytdl/downloads', {
+				method: 'POST',
+				body: JSON.stringify(body)
+			});
+
+			return result.downloadId;
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			this.state.update((s) => ({
+				...s,
+				error: `Failed to queue download: ${errorMsg}`
+			}));
+			return null;
+		}
+	}
+
+	async queueDownloadWithMode(
+		videoId: string,
+		title: string,
+		thumbnailUrl: string | null,
+		mode: DownloadMode
+	): Promise<string | null> {
+		if (!browser) return null;
+
+		const settings = this.get();
+		const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+		const body: Record<string, unknown> = {
+			url,
+			videoId,
+			title,
+			mode,
+			quality: settings.defaultQuality,
+			format: settings.defaultFormat,
+			thumbnailUrl,
+			durationSeconds: null,
+			channelName: null
+		};
+
+		if (mode === 'video' || mode === 'both') {
 			body.videoQuality = settings.defaultVideoQuality;
 			body.videoFormat = settings.defaultVideoFormat;
 		}

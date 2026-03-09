@@ -12,30 +12,30 @@
 	},
 	"features": {
 		"heading": "Everything you need",
-		"subheading": "A complete media toolkit built for power users who value freedom and privacy.",
-		"download": {
-			"title": "YouTube Downloads",
-			"description": "Download videos and audio directly from YouTube. Save content for offline viewing in your preferred format and quality."
+		"subheading": "Built around three principles: download freely, stay private, and keep your data yours.",
+		"downloader": {
+			"title": "Built-in Downloader",
+			"description": "Download any video or audio track directly from YouTube. Choose your format and quality — MP4, MP3, or anything in between — powered by yt-dlp under the hood."
 		},
-		"search": {
-			"title": "YouTube Search",
-			"description": "Search and browse YouTube content natively within the app. No browser needed, no tracking, no ads."
+		"privacy": {
+			"title": "Privacy-First",
+			"description": "No account required. No tracking pixels, no ad profiling, no behavioral analytics. Browse and download YouTube content without being watched."
 		},
-		"library": {
-			"title": "Media Libraries",
-			"description": "Organize your downloaded media into libraries. Tag, categorize, and browse your collection with a clean interface."
+		"nodata": {
+			"title": "Zero Data Collection",
+			"description": "Your activity never leaves your device. Mhaoltube collects no usage data, sends no telemetry, and phones home to no one. What you watch is your business."
 		},
-		"player": {
-			"title": "Built-in Player",
-			"description": "Play your media with a fully integrated player. Supports video and audio playback with a minimal, distraction-free UI."
+		"client": {
+			"title": "Full YouTube Client",
+			"description": "Search, browse channels, follow subscriptions, and watch content — all without opening a browser. Mhaoltube is a complete YouTube experience, not just a downloader."
 		},
-		"addons": {
-			"title": "Addon System",
-			"description": "Extend functionality with addons for lyrics, music metadata, movie info, and more. The plugin architecture lets you customize your experience."
+		"free": {
+			"title": "100% Free, Forever",
+			"description": "No subscriptions, no premium tiers, no paywalls. Mhaoltube is and will always be completely free to use. Every feature, available to everyone, from day one."
 		},
-		"crossplatform": {
-			"title": "Cross-Platform",
-			"description": "Runs on macOS and Android today, with more platforms on the way. Built with Tauri for a fast, native experience everywhere."
+		"opensource": {
+			"title": "Open Source",
+			"description": "Every line of code is public. Audit it, fork it, contribute to it. Mhaoltube is built in the open so you never have to take our word for anything."
 		}
 	},
 	"platforms": {

@@ -22,6 +22,12 @@ class LibraryService {
 
 	private initialized = false;
 
+	reset(): void {
+		this.initialized = false;
+		this.library.set(null);
+		this.state.set(initialState);
+	}
+
 	async initialize(): Promise<void> {
 		if (!browser || this.initialized) return;
 

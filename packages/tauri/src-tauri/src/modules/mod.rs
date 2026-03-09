@@ -235,6 +235,38 @@ impl ModuleRegistry {
             .collect()
     }
 
+    /// Re-seed module settings defaults into the database. Safe to call after a DB reset.
+    pub fn seed_settings(&self, state: &AppState) {
+        for module in &self.modules {
+            let manifest = module.manifest();
+            if manifest.settings.is_empty() {
+                continue;
+            }
+            let mut entries: HashMap<String, String> = HashMap::new();
+            for setting in &manifest.settings {
+                let env_val = setting
+                    .env_key
+                    .as_ref()
+                    .and_then(|k| std::env::var(k).ok());
+                let current = state.settings.get(&setting.key);
+                if current.is_none() {
+                    entries.insert(
+                        setting.key.clone(),
+                        env_val.unwrap_or_else(|| setting.default.clone()),
+                    );
+                } else if let Some(env_val) = &env_val {
+                    let db_val = current.unwrap();
+                    if db_val.is_empty() || db_val == setting.default {
+                        entries.insert(setting.key.clone(), env_val.clone());
+                    }
+                }
+            }
+            if !entries.is_empty() {
+                state.settings.set_many(&entries);
+            }
+        }
+    }
+
     /// Shutdown all modules in reverse order.
     pub fn shutdown(&self) {
         for module in self.modules.iter().rev() {

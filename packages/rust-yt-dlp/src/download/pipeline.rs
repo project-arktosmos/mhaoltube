@@ -9,7 +9,7 @@ use crate::download::format::{select_formats, SelectedFormats};
 use crate::download::http::{download_with_progress, DownloadProgressUpdate};
 use crate::download::muxer::FfmpegMuxer;
 use crate::error::YtDlpError;
-use crate::extractor::clients::{InnertubeClient, CLIENT_PRIORITY};
+use crate::extractor::clients::{InnertubeClient, CLIENT_PRIORITY, WEB};
 use crate::extractor::innertube::InnertubeApi;
 use crate::extractor::player::{PlayerResponse, ResolvedFormat, StreamFormat, extract_player_js_url};
 use crate::extractor::signatures::{self, SignatureResolver};
@@ -223,10 +223,110 @@ impl DownloadPipeline {
             }
             DownloadMode::Audio => {
                 let final_output = audio_output_dir.join(format!("{}.{}", file_stem, selected.output_extension));
-                self.execute_single_mode(
-                    config, &selected, output_dir, &final_output, None,
-                    file_stem, &state_tx, cancel_rx, http_client, &download_headers,
-                ).await
+                if selected.needs_audio_extraction {
+                    // Muxed stream path — no change needed
+                    self.execute_single_mode(
+                        config, &selected, output_dir, &final_output, None,
+                        file_stem, &state_tx, cancel_rx, http_client, &download_headers,
+                    ).await
+                } else {
+                    // Audio-only adaptive stream — with WEB client fallback on CDN 403
+                    let download_result = self.download_audio_with_client_fallback(
+                        &selected.audio, &final_output, config, &state_tx,
+                        cancel_rx.clone(), http_client, &download_headers,
+                    ).await;
+
+                    let actual_output = match download_result {
+                        Ok(()) => final_output.clone(),
+                        Err(e) => {
+                            // Audio-only streams failed even with WEB client — fall back to
+                            // muxed stream download + ffmpeg audio extraction
+                            log::warn!(
+                                "Audio-only stream failed ({}), falling back to muxed stream + ffmpeg extraction",
+                                e
+                            );
+                            let muxed_formats: Vec<_> = resolved_formats
+                                .iter()
+                                .filter(|f| !f.is_audio_only && !f.is_video_only)
+                                .cloned()
+                                .collect();
+                            if muxed_formats.is_empty() {
+                                return Err(e);
+                            }
+                            let muxed = select_formats(
+                                &muxed_formats,
+                                &DownloadMode::Audio,
+                                &config.audio_quality,
+                                &config.audio_format,
+                                None,
+                                None,
+                                false,
+                            )?;
+                            let muxed_tmp = audio_output_dir
+                                .join(format!("{}.muxed.tmp.{}", file_stem, muxed.output_extension));
+                            self.download_single_with_retry(
+                                &muxed.audio, &muxed_tmp, config, &state_tx,
+                                cancel_rx.clone(), http_client, &download_headers,
+                            ).await?;
+                            if self.muxer.is_available() {
+                                let audio_ext = match config.audio_format {
+                                    AudioFormat::Aac => "m4a",
+                                    AudioFormat::Mp3 => "mp3",
+                                    AudioFormat::Opus => "opus",
+                                };
+                                let audio_path = audio_output_dir
+                                    .join(format!("{}.{}", file_stem, audio_ext));
+                                let _ = state_tx.send(PipelineState::Muxing);
+                                self.muxer
+                                    .convert_audio(
+                                        &muxed_tmp,
+                                        &audio_path,
+                                        &config.audio_format,
+                                        &config.audio_quality,
+                                    )
+                                    .await?;
+                                let _ = tokio::fs::remove_file(&muxed_tmp).await;
+                                audio_path
+                            } else {
+                                log::warn!("FFmpeg not available; returning muxed file as audio fallback");
+                                muxed_tmp
+                            }
+                        }
+                    };
+
+                    // Convert to mp3 if the stream codec doesn't match
+                    let final_path = if config.audio_format == AudioFormat::Mp3
+                        && selected.audio.codec != "mp3"
+                        && actual_output == final_output
+                    {
+                        let mp3_path = audio_output_dir.join(format!("{}.mp3", file_stem));
+                        if self.muxer.is_available() {
+                            self.muxer
+                                .convert_audio(
+                                    &actual_output,
+                                    &mp3_path,
+                                    &AudioFormat::Mp3,
+                                    &config.audio_quality,
+                                )
+                                .await?;
+                            let _ = tokio::fs::remove_file(&actual_output).await;
+                            mp3_path
+                        } else {
+                            actual_output
+                        }
+                    } else {
+                        actual_output
+                    };
+
+                    let output_str = final_path.to_string_lossy().to_string();
+                    let output = PipelineOutput {
+                        output_path: output_str.clone(),
+                        video_output_path: None,
+                        audio_output_path: Some(output_str),
+                    };
+                    let _ = state_tx.send(PipelineState::Completed { output: output.clone() });
+                    Ok(output)
+                }
             }
         }
     }
@@ -267,16 +367,45 @@ impl DownloadPipeline {
 
         // Produce the audio file
         let audio_path_str = if let Some(audio) = audio_selected {
-            // Strategy 1: direct audio-only stream download (preferred, no ffmpeg needed)
+            // Strategy 1: direct audio-only stream download (preferred, no ffmpeg needed).
+            // On CDN 403 (e.g. ANDROID throttles adaptive), retry with WEB client before
+            // falling through to strategy 2.
             let audio_final = audio_output_dir.join(format!("{}.{}", file_stem, audio.output_extension));
             log::info!(
                 "Both mode: downloading audio-only stream ({} container) to {:?}",
                 audio.output_extension,
                 audio_final
             );
-            self.download_single_with_retry(&audio.audio, &audio_final, config, state_tx, cancel_rx.clone(), http_client, download_headers)
-                .await?;
-            audio_final.to_string_lossy().to_string()
+            match self.download_audio_with_client_fallback(
+                &audio.audio, &audio_final, config, state_tx, cancel_rx.clone(), http_client, download_headers,
+            ).await {
+                Ok(()) => audio_final.to_string_lossy().to_string(),
+                Err(e) => {
+                    log::warn!("Both mode: audio-only stream failed ({}), falling through to ffmpeg extraction", e);
+                    // Fall through to strategy 2 below by treating this as if audio_selected was None
+                    if self.muxer.is_available() {
+                        let audio_ext = match config.audio_format {
+                            AudioFormat::Aac => "m4a",
+                            AudioFormat::Mp3 => "mp3",
+                            AudioFormat::Opus => "opus",
+                        };
+                        let audio_final2 = audio_output_dir.join(format!("{}.{}", file_stem, audio_ext));
+                        let _ = state_tx.send(PipelineState::Muxing);
+                        self.muxer
+                            .convert_audio(
+                                &video_final,
+                                &audio_final2,
+                                &config.audio_format,
+                                &config.audio_quality,
+                            )
+                            .await?;
+                        audio_final2.to_string_lossy().to_string()
+                    } else {
+                        log::warn!("Both mode: no audio-only stream and no FFmpeg; audio file skipped");
+                        String::new()
+                    }
+                }
+            }
         } else if self.muxer.is_available() {
             // Strategy 2: extract audio from video via ffmpeg
             let audio_ext = match config.audio_format {
@@ -640,6 +769,118 @@ impl DownloadPipeline {
                 self.download_single(&refreshed, output_path, config, state_tx, cancel_rx, http_client, download_headers).await
             }
             Err(e) => Err(e),
+        }
+    }
+
+    /// Fetch a player response from one specific client (no fallback loop).
+    async fn fetch_player_response_from_client(
+        &self,
+        video_id: &str,
+        client: &'static InnertubeClient,
+        po_token: Option<&str>,
+        visitor_data: Option<&str>,
+    ) -> Result<(PlayerResponse, &'static InnertubeClient, bool)> {
+        let (token, vd) = if client.is_browser {
+            (po_token, visitor_data)
+        } else {
+            (None, None)
+        };
+        let sts = if client.requires_js {
+            if let Err(e) = self.ensure_player_js_loaded(video_id).await {
+                log::warn!("Could not load player.js before {} request (no STS): {}", client.name, e);
+            }
+            self.sig_resolver.lock().sts()
+        } else {
+            None
+        };
+        let resp = self.innertube.player(video_id, client, sts, token, vd).await?;
+        if !resp.is_playable() {
+            let reason = resp.unplayable_reason().unwrap_or_default();
+            anyhow::bail!("{} client returned unplayable: {}", client.name, reason);
+        }
+        let token_used = token.is_some();
+        Ok((resp, client, token_used))
+    }
+
+    /// Like `download_single_with_retry`, but on a persistent CDN 403 (after n-param refresh)
+    /// re-fetches the player response with the WEB client and retries with browser headers.
+    /// Returns the original error if the WEB client also fails or has no audio-only stream.
+    async fn download_audio_with_client_fallback(
+        &self,
+        format: &ResolvedFormat,
+        output_path: &Path,
+        config: &DownloadTaskConfig,
+        state_tx: &watch::Sender<PipelineState>,
+        cancel_rx: watch::Receiver<bool>,
+        http_client: &reqwest::Client,
+        download_headers: &HeaderMap,
+    ) -> Result<()> {
+        let result = self.download_single_with_retry(
+            format, output_path, config, state_tx, cancel_rx.clone(), http_client, download_headers,
+        ).await;
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if !e.to_string().contains("403") {
+                    return Err(e);
+                }
+                log::warn!(
+                    "Audio CDN 403 persists for itag {} after n-param refresh — retrying with WEB client",
+                    format.itag
+                );
+                match self.fetch_player_response_from_client(
+                    &config.video_id,
+                    &*WEB,
+                    config.po_token.as_deref(),
+                    config.visitor_data.as_deref(),
+                ).await {
+                    Ok((web_response, web_client, web_token_used)) => {
+                        let mut web_formats = self.resolve_formats(&web_response, &config.video_id).await?;
+                        if web_token_used {
+                            if let Some(ref token) = config.po_token {
+                                for fmt in &mut web_formats {
+                                    if fmt.url.contains('?') {
+                                        fmt.url = format!("{}&pot={}", fmt.url, token);
+                                    } else {
+                                        fmt.url = format!("{}?pot={}", fmt.url, token);
+                                    }
+                                }
+                            }
+                        }
+                        let web_selected = select_formats(
+                            &web_formats,
+                            &DownloadMode::Audio,
+                            &config.audio_quality,
+                            &config.audio_format,
+                            None,
+                            None,
+                            web_token_used,
+                        );
+                        match web_selected {
+                            Ok(s) if !s.needs_audio_extraction => {
+                                let web_headers = Self::build_download_headers(web_client);
+                                log::info!(
+                                    "Retrying audio download with WEB client (itag {})",
+                                    s.audio.itag
+                                );
+                                self.download_single_with_retry(
+                                    &s.audio, output_path, config, state_tx, cancel_rx,
+                                    http_client, &web_headers,
+                                ).await
+                            }
+                            _ => {
+                                log::warn!("WEB client has no audio-only adaptive stream");
+                                Err(e)
+                            }
+                        }
+                    }
+                    Err(web_err) => {
+                        log::warn!("WEB client fetch failed for audio retry: {}", web_err);
+                        Err(e)
+                    }
+                }
+            }
         }
     }
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#000000"/>
+  <text
+    text-anchor="middle"
+    dominant-baseline="central"
+    x="256"
+    y="272"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-weight="bold"
+    font-size="240"
+  ><tspan fill="#d6d6d6">M</tspan><tspan fill="#fb2c36">T</tspan></text>
+</svg>

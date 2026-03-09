@@ -104,6 +104,24 @@ impl YouTubeContentRepo {
         .unwrap();
     }
 
+    pub fn clear_video_path(&self, youtube_id: &str) {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET video_path = NULL WHERE youtube_id = ?1",
+            params![youtube_id],
+        )
+        .unwrap();
+    }
+
+    pub fn clear_audio_path(&self, youtube_id: &str) {
+        let conn = self.db.lock();
+        conn.execute(
+            "UPDATE youtube_content SET audio_path = NULL WHERE youtube_id = ?1",
+            params![youtube_id],
+        )
+        .unwrap();
+    }
+
     pub fn delete(&self, youtube_id: &str) {
         let conn = self.db.lock();
         conn.execute(

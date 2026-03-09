@@ -1,13 +1,26 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { libraryService } from '$services/library.service';
+	import { rightPanelService } from '$services/right-panel.service';
 	import { formatDuration } from '$types/youtube.type';
+	import type { YouTubeContent } from '$types/youtube.type';
 
 	const libState = libraryService.state;
 
 	onMount(() => {
 		libraryService.initialize();
 	});
+
+	function handleItemClick(item: YouTubeContent) {
+		rightPanelService.open({
+			videoId: item.youtubeId,
+			title: item.title,
+			thumbnail: item.thumbnailUrl ?? '',
+			uploaderName: item.channelName ?? undefined,
+			hasVideo: item.hasVideo,
+			hasAudio: item.hasAudio
+		});
+	}
 </script>
 
 <div class="container mx-auto p-4">
@@ -31,7 +44,9 @@
 	{:else}
 		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
 			{#each $libState.content as item (item.youtubeId)}
-				<div class="card bg-base-100 shadow-sm">
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="card bg-base-100 shadow-sm cursor-pointer transition-shadow hover:shadow-md" onclick={() => handleItemClick(item)}>
 					<figure class="aspect-video bg-base-300">
 						{#if item.thumbnailUrl}
 							<img
@@ -52,28 +67,6 @@
 						{#if item.durationSeconds}
 							<p class="text-xs opacity-40">{formatDuration(item.durationSeconds)}</p>
 						{/if}
-						<div class="mt-1 flex gap-1">
-							{#if item.hasVideo}
-								<a
-									href={libraryService.streamVideoUrl(item.youtubeId)}
-									target="_blank"
-									class="btn btn-ghost btn-xs"
-									title="Play video"
-								>
-									▶ Video
-								</a>
-							{/if}
-							{#if item.hasAudio}
-								<a
-									href={libraryService.streamAudioUrl(item.youtubeId)}
-									target="_blank"
-									class="btn btn-ghost btn-xs"
-									title="Play audio"
-								>
-									♪ Audio
-								</a>
-							{/if}
-						</div>
 					</div>
 				</div>
 			{/each}

@@ -40,7 +40,7 @@ impl Module for YtdlModule {
                 },
                 ModuleSettingDef {
                     key: "ytdl.format".to_string(),
-                    default: "opus".to_string(),
+                    default: "aac".to_string(),
                     env_key: None,
                 },
                 ModuleSettingDef {

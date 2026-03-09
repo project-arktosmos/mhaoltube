@@ -6,8 +6,15 @@ import type { RouteEntry } from './src/types/route.type.js';
 const VIRTUAL_MODULE_ID = 'virtual:routes';
 const RESOLVED_VIRTUAL_MODULE_ID = '\0' + VIRTUAL_MODULE_ID;
 
-function capitalize(str: string): string {
-	return str.charAt(0).toUpperCase() + str.slice(1);
+const ACRONYMS: Record<string, string> = {
+	youtube: 'YouTube'
+};
+
+function toLabel(str: string): string {
+	return str
+		.split('-')
+		.map((word) => ACRONYMS[word] ?? word.charAt(0).toUpperCase() + word.slice(1))
+		.join(' ');
 }
 
 function scanRoutes(dir: string, basePath: string = ''): RouteEntry[] {
@@ -34,7 +41,7 @@ function scanRoutes(dir: string, basePath: string = ''): RouteEntry[] {
 		if (hasPage || children.length > 0) {
 			entries.push({
 				path: routePath,
-				label: isDynamic ? item.name : capitalize(item.name),
+				label: isDynamic ? item.name : toLabel(item.name),
 				isDynamic,
 				children
 			});

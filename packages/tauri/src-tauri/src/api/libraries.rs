@@ -11,6 +11,7 @@ use serde::Serialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_default_library))
+        .route("/fs", get(list_library_fs))
         .route(
             "/content/{youtube_id}/stream/video",
             get(stream_video),
@@ -28,6 +29,62 @@ struct MappedLibrary {
     path: String,
     #[serde(rename = "dateAdded")]
     date_added: i64,
+}
+
+#[derive(Serialize)]
+struct FsEntry {
+    name: String,
+    size: u64,
+}
+
+#[derive(Serialize)]
+struct LibraryFs {
+    path: String,
+    audio: Vec<FsEntry>,
+    video: Vec<FsEntry>,
+}
+
+fn list_dir(dir: &std::path::Path) -> Vec<FsEntry> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<FsEntry> = entries
+        .flatten()
+        .filter_map(|e| {
+            let path = e.path();
+            if !path.is_file() {
+                return None;
+            }
+            let name = path.file_name()?.to_str()?.to_string();
+            if name.starts_with('.') {
+                return None;
+            }
+            let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+            Some(FsEntry { name, size })
+        })
+        .collect();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+async fn list_library_fs(State(state): State<AppState>) -> impl IntoResponse {
+    let library = match state.libraries.get(crate::AppState::DEFAULT_LIBRARY_ID) {
+        Some(lib) => lib,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Library not found" })),
+            )
+                .into_response()
+        }
+    };
+    let base = std::path::PathBuf::from(&library.path);
+    Json(LibraryFs {
+        path: library.path,
+        audio: list_dir(&base.join("audio")),
+        video: list_dir(&base.join("video")),
+    })
+    .into_response()
 }
 
 async fn get_default_library(State(state): State<AppState>) -> impl IntoResponse {
