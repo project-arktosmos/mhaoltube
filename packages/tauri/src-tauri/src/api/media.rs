@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Serialize;
@@ -11,7 +11,10 @@ use serde::Serialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_all_content))
+        .route("/fill-durations", post(fill_durations))
         .route("/{youtube_id}", get(get_content))
+        .route("/{youtube_id}/audio", delete(delete_audio))
+        .route("/{youtube_id}/video", delete(delete_video))
 }
 
 #[derive(Serialize)]
@@ -31,20 +34,30 @@ struct YouTubeContentResponse {
     has_video: bool,
     #[serde(rename = "hasAudio")]
     has_audio: bool,
+    #[serde(rename = "videoSize")]
+    video_size: Option<u64>,
+    #[serde(rename = "audioSize")]
+    audio_size: Option<u64>,
     #[serde(rename = "createdAt")]
     created_at: String,
 }
 
+fn file_size(path: Option<&str>) -> Option<u64> {
+    std::fs::metadata(path?).ok().map(|m| m.len())
+}
+
 fn map_content(row: crate::db::repo::youtube_content::YouTubeContentRow) -> YouTubeContentResponse {
     YouTubeContentResponse {
+        has_video: row.video_path.is_some(),
+        has_audio: row.audio_path.is_some(),
+        video_size: file_size(row.video_path.as_deref()),
+        audio_size: file_size(row.audio_path.as_deref()),
         youtube_id: row.youtube_id,
         title: row.title,
         thumbnail_url: row.thumbnail_url,
         duration_seconds: row.duration_seconds,
         channel_name: row.channel_name,
         channel_id: row.channel_id,
-        has_video: row.video_path.is_some(),
-        has_audio: row.audio_path.is_some(),
         created_at: row.created_at,
     }
 }
@@ -63,4 +76,54 @@ async fn get_content(
         Some(row) => Json(map_content(row)).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+async fn delete_audio(
+    State(state): State<AppState>,
+    Path(youtube_id): Path<String>,
+) -> impl IntoResponse {
+    let content = match state.youtube_content.get(&youtube_id) {
+        Some(c) => c,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if let Some(path) = &content.audio_path {
+        let _ = std::fs::remove_file(path);
+    }
+
+    state.youtube_content.clear_audio_path(&youtube_id);
+
+    // If no files remain, remove the DB row entirely
+    if let Some(updated) = state.youtube_content.get(&youtube_id) {
+        if updated.video_path.is_none() && updated.audio_path.is_none() {
+            state.youtube_content.delete(&youtube_id);
+        }
+    }
+
+    StatusCode::OK.into_response()
+}
+
+async fn delete_video(
+    State(state): State<AppState>,
+    Path(youtube_id): Path<String>,
+) -> impl IntoResponse {
+    let content = match state.youtube_content.get(&youtube_id) {
+        Some(c) => c,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if let Some(path) = &content.video_path {
+        let _ = std::fs::remove_file(path);
+    }
+
+    state.youtube_content.clear_video_path(&youtube_id);
+
+    // If no files remain, remove the DB row entirely
+    if let Some(updated) = state.youtube_content.get(&youtube_id) {
+        if updated.video_path.is_none() && updated.audio_path.is_none() {
+            state.youtube_content.delete(&youtube_id);
+        }
+    }
+
+    StatusCode::OK.into_response()
 }

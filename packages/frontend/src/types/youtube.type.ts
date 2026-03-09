@@ -168,6 +168,8 @@ export interface YouTubeContent {
 	channelId: string | null;
 	hasVideo: boolean;
 	hasAudio: boolean;
+	videoSize: number | null;
+	audioSize: number | null;
 	createdAt: string;
 }
 

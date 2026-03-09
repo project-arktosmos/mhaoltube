@@ -67,6 +67,16 @@ class LibraryService {
 		return apiUrl(`/api/ytdl/downloads/${downloadId}/stream/video`);
 	}
 
+	async deleteAudio(youtubeId: string): Promise<void> {
+		await this.fetchJson(`/api/media/${youtubeId}/audio`, { method: 'DELETE' });
+		await this.fetchContent();
+	}
+
+	async deleteVideo(youtubeId: string): Promise<void> {
+		await this.fetchJson(`/api/media/${youtubeId}/video`, { method: 'DELETE' });
+		await this.fetchContent();
+	}
+
 	private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 		const response = await fetch(apiUrl(path), {
 			...init,

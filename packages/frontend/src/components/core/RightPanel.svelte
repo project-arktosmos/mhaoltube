@@ -43,6 +43,29 @@
 
 	let downloadingAudio = $state(false);
 	let downloadingVideo = $state(false);
+	let deletingAudio = $state(false);
+	let deletingVideo = $state(false);
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+		return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+	}
+
+	async function handleDeleteAudio() {
+		if (!video) return;
+		deletingAudio = true;
+		await libraryService.deleteAudio(video.videoId);
+		deletingAudio = false;
+	}
+
+	async function handleDeleteVideo() {
+		if (!video) return;
+		deletingVideo = true;
+		await libraryService.deleteVideo(video.videoId);
+		deletingVideo = false;
+	}
 
 	const activeStates = ['pending', 'fetching', 'downloading', 'muxing'];
 
@@ -133,6 +156,60 @@
 					<p class="text-sm text-base-content/60">{video.publishedText}</p>
 				{/if}
 			</div>
+
+			{#if hasAudio || hasVideo}
+				<div class="divider my-0 text-xs opacity-50">Files</div>
+				<div class="flex flex-col gap-2">
+					{#if hasAudio}
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-2">
+								<span class="badge badge-xs badge-neutral">Audio</span>
+								{#if liveContent?.audioSize}
+									<span class="text-xs text-base-content/60"
+										>{formatBytes(liveContent.audioSize)}</span
+									>
+								{/if}
+							</div>
+							<button
+								class="btn text-error btn-ghost btn-xs"
+								disabled={deletingAudio}
+								onclick={handleDeleteAudio}
+								aria-label="Delete audio"
+							>
+								{#if deletingAudio}
+									<span class="loading loading-xs loading-spinner"></span>
+								{:else}
+									Delete
+								{/if}
+							</button>
+						</div>
+					{/if}
+					{#if hasVideo}
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-2">
+								<span class="badge badge-xs badge-neutral">Video</span>
+								{#if liveContent?.videoSize}
+									<span class="text-xs text-base-content/60"
+										>{formatBytes(liveContent.videoSize)}</span
+									>
+								{/if}
+							</div>
+							<button
+								class="btn text-error btn-ghost btn-xs"
+								disabled={deletingVideo}
+								onclick={handleDeleteVideo}
+								aria-label="Delete video"
+							>
+								{#if deletingVideo}
+									<span class="loading loading-xs loading-spinner"></span>
+								{:else}
+									Delete
+								{/if}
+							</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			{#if activeDownload && activeStates.includes(activeDownload.state)}
 				<div class="divider my-0 text-xs opacity-50">Download Progress</div>
