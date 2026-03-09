@@ -127,3 +127,67 @@ async fn delete_video(
 
     StatusCode::OK.into_response()
 }
+
+#[derive(Serialize)]
+struct FilledDuration {
+    #[serde(rename = "youtubeId")]
+    youtube_id: String,
+    #[serde(rename = "durationSeconds")]
+    duration_seconds: i64,
+}
+
+async fn fill_durations(State(state): State<AppState>) -> impl IntoResponse {
+    let ids = state.youtube_content.get_ids_missing_duration();
+    if ids.is_empty() {
+        return Json(Vec::<FilledDuration>::new()).into_response();
+    }
+
+    let client = reqwest::Client::new();
+    let mut filled: Vec<FilledDuration> = Vec::new();
+
+    for video_id in &ids {
+        let body = serde_json::json!({
+            "videoId": video_id,
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20260301.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            }
+        });
+
+        let result = client
+            .post("https://www.youtube.com/youtubei/v1/player")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+            .json(&body)
+            .send()
+            .await;
+
+        let duration = match result {
+            Ok(resp) if resp.status().is_success() => resp
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|data| {
+                    data.pointer("/videoDetails/lengthSeconds")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<i64>().ok())
+                        .filter(|&d| d > 0)
+                }),
+            _ => None,
+        };
+
+        if let Some(secs) = duration {
+            state.youtube_content.update_duration(video_id, secs);
+            filled.push(FilledDuration {
+                youtube_id: video_id.clone(),
+                duration_seconds: secs,
+            });
+        }
+    }
+
+    Json(filled).into_response()
+}
