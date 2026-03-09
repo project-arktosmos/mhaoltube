@@ -244,6 +244,7 @@
 				publishedText: item.uploadedDate || undefined,
 				uploaderName: item.uploaderName || undefined,
 				uploaderAvatar: item.uploaderAvatar || undefined,
+				uploaderUrl: item.uploaderUrl || undefined,
 				uploaderVerified: item.uploaderVerified
 			});
 		}

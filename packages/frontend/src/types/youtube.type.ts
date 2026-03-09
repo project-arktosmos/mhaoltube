@@ -341,6 +341,7 @@ export interface RightPanelVideo {
 	publishedText?: string;
 	uploaderName?: string;
 	uploaderAvatar?: string;
+	uploaderUrl?: string;
 	uploaderVerified?: boolean;
 	hasVideo?: boolean;
 	hasAudio?: boolean;

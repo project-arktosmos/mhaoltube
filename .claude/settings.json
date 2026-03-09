@@ -75,12 +75,15 @@
       "Bash(xxd)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
       "Bash(npx prettier --write src/components/core/RightPanel.svelte)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(xargs ls -la)",
+      "Bash(od -c /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/components/core/RightPanel.svelte)"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",
       "/Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/components/player",
-      "/Users/bearni/project-arktosmos/mhaoltube.git/.claude/skills/new-component"
+      "/Users/bearni/project-arktosmos/mhaoltube.git/.claude/skills/new-component",
+      "/Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/routes/channels"
     ]
   },
   "hooks": {

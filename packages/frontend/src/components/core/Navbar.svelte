@@ -1,6 +1,5 @@
 <script lang="ts">
 	import classNames from 'classnames';
-	import { mediaModeService } from '$services/media-mode.service';
 	import { youtubeService } from '$services/youtube.service';
 	import YouTubeDownloadQueueModal from '$components/youtube/YouTubeDownloadQueueModal.svelte';
 	import Modal from '$components/core/Modal.svelte';
@@ -14,9 +13,6 @@
 	let { classes = '' }: Props = $props();
 
 	let wrapperClasses = $derived(classNames('navbar bg-base-100 shadow-sm', classes));
-
-	const mediaModeStore = mediaModeService.store;
-	let mediaMode = $derived($mediaModeStore);
 
 	const ytState = youtubeService.state;
 	const ACTIVE_STATES = ['pending', 'fetching', 'downloading', 'muxing'];
@@ -116,20 +112,6 @@
 						d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
 					/>
 				</svg>
-			</button>
-		</div>
-		<div class="join">
-			<button
-				class={classNames('btn join-item btn-sm', { 'btn-primary': mediaMode === 'audio' })}
-				onclick={() => mediaModeService.setMode('audio')}
-			>
-				Audio
-			</button>
-			<button
-				class={classNames('btn join-item btn-sm', { 'btn-primary': mediaMode === 'video' })}
-				onclick={() => mediaModeService.setMode('video')}
-			>
-				Video
 			</button>
 		</div>
 	</div>

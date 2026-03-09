@@ -5,7 +5,11 @@
 	import { youtubeService } from '$services/youtube.service';
 	import { mediaModeService } from '$services/media-mode.service';
 	import { getStateLabel, getStateColor } from '$types/youtube.type';
+	import type { YouTubeChannelMeta } from '$types/youtube.type';
+	import { apiUrl } from '$lib/api-base';
 	import MediaPlayer from '$components/core/MediaPlayer.svelte';
+	import YouTubeChannelCard from '$components/youtube-search/YouTubeChannelCard.svelte';
+	import type { YouTubeSearchChannelItem } from '$types/youtube-search.type';
 
 	const panelStore = rightPanelService.store;
 	const ytState = youtubeService.state;
@@ -90,6 +94,39 @@
 
 	let isFavorite = $derived(liveContent?.isFavorite ?? false);
 
+	let channelMeta = $state<YouTubeChannelMeta | null>(null);
+
+	$effect(() => {
+		const url = video?.uploaderUrl;
+		channelMeta = null;
+		if (!url) return;
+		const handle = url.split('/').pop();
+		if (!handle) return;
+
+		fetch(apiUrl(`/api/youtube/channel-meta?handle=${handle}`))
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data: YouTubeChannelMeta | null) => {
+				channelMeta = data;
+			})
+			.catch(() => {});
+	});
+
+	let channelItem = $derived<YouTubeSearchChannelItem | null>(
+		video?.uploaderName
+			? {
+					type: 'channel',
+					channelId: channelMeta?.channelId ?? video.uploaderUrl?.split('/').pop() ?? '',
+					name: video.uploaderName,
+					thumbnail: channelMeta?.avatar ?? video.uploaderAvatar ?? '',
+					url: video.uploaderUrl ?? '',
+					subscriberText: channelMeta?.subscriberText ?? '',
+					videoCountText: '',
+					description: channelMeta?.description ?? '',
+					verified: video.uploaderVerified ?? false
+				}
+			: null
+	);
+
 	async function handleToggleFavorite() {
 		if (!video || togglingFavorite) return;
 		togglingFavorite = true;
@@ -124,9 +161,14 @@
 		)
 	);
 
+	let compact = $state(false);
+
 	let wrapperClasses = $derived(
 		classNames(
-			'flex flex-col bg-base-200 border-l border-base-300 overflow-y-auto overflow-x-hidden w-[26.75rem]'
+			'flex flex-col bg-base-200 overflow-y-auto overflow-x-hidden',
+			'fixed inset-0 top-16 z-30 w-full',
+			'md:static md:z-auto md:border-l md:border-base-300',
+			compact ? 'md:w-[13.375rem]' : 'md:w-[26.75rem]'
 		)
 	);
 
@@ -143,13 +185,25 @@
 	}
 </script>
 
-<aside class={wrapperClasses}>
-	{#if video}
-		<div class="flex min-w-[26.75rem] flex-col gap-4 p-4">
+{#if video}
+	<aside class={wrapperClasses}>
+		<div class={classNames('flex flex-col gap-4 p-4', compact ? 'md:min-w-[13.375rem]' : 'md:min-w-[26.75rem]')}>
 			<div class="flex items-center justify-between">
-				<h3 class="text-xs font-semibold tracking-widest uppercase opacity-50">
-					{mediaMode === 'audio' ? 'Audio' : 'Video'}
-				</h3>
+				<button
+					class="btn btn-ghost btn-xs hidden md:flex"
+					onclick={() => (compact = !compact)}
+					aria-label={compact ? 'Expand panel' : 'Collapse panel'}
+				>
+					{#if compact}
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+						</svg>
+					{/if}
+				</button>
 				<button
 					class="btn btn-circle btn-ghost btn-xs"
 					onclick={() => rightPanelService.close()}
@@ -186,51 +240,37 @@
 			<div class="flex flex-col gap-1">
 				<div class="flex items-start justify-between gap-2">
 					<p class="leading-snug font-medium">{video.title}</p>
-					{#if liveContent}
-						<button
-							class={classNames(
-								'btn btn-circle shrink-0 btn-ghost btn-sm',
-								isFavorite ? 'text-error' : 'text-base-content/30'
-							)}
-							disabled={togglingFavorite}
-							onclick={handleToggleFavorite}
-							aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-						>
-							{#if togglingFavorite}
-								<span class="loading loading-xs loading-spinner"></span>
-							{:else}
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									viewBox="0 0 24 24"
-									fill={isFavorite ? 'currentColor' : 'none'}
-									stroke="currentColor"
-									stroke-width="2"
-									class="h-5 w-5"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
-									/>
-								</svg>
-							{/if}
-						</button>
-					{/if}
+					<button
+						class={classNames(
+							'btn btn-circle shrink-0 btn-ghost btn-sm',
+							isFavorite ? 'text-error' : 'text-base-content/30'
+						)}
+						disabled={togglingFavorite}
+						onclick={handleToggleFavorite}
+						aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+					>
+						{#if togglingFavorite}
+							<span class="loading loading-xs loading-spinner"></span>
+						{:else}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 24"
+								fill={isFavorite ? 'currentColor' : 'none'}
+								stroke="currentColor"
+								stroke-width="2"
+								class="h-5 w-5"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
+								/>
+							</svg>
+						{/if}
+					</button>
 				</div>
-				{#if video.uploaderName}
-					<div class="mt-1 flex items-center gap-2">
-						{#if video.uploaderAvatar}
-							<img
-								src={video.uploaderAvatar}
-								alt={video.uploaderName}
-								class="h-4 w-4 rounded-full"
-							/>
-						{/if}
-						<span class="text-sm text-base-content/60">{video.uploaderName}</span>
-						{#if video.uploaderVerified}
-							<span class="badge badge-xs badge-info">✓</span>
-						{/if}
-					</div>
+				{#if channelItem}
+					<YouTubeChannelCard channel={channelItem} />
 				{/if}
 				{#if video.viewsText}
 					<p class="mt-1 text-sm text-base-content/60">{video.viewsText}</p>
@@ -318,33 +358,35 @@
 				</div>
 			{/if}
 
-			{#if (mediaMode === 'audio' && !hasAudio) || (mediaMode === 'video' && !hasVideo)}
+			{#if !hasAudio || !hasVideo}
 				<div class="divider my-0 text-xs opacity-50">Download</div>
-
-				{#if mediaMode === 'audio'}
-					<button
-						class="btn w-full gap-2 btn-sm btn-primary"
-						disabled={audioInProgress || downloadingAudio}
-						onclick={() => handleDownload('audio')}
-					>
-						{#if downloadingAudio || audioInProgress}
-							<span class="loading loading-xs loading-spinner"></span>
-						{/if}
-						Download Audio
-					</button>
-				{:else}
-					<button
-						class="btn w-full gap-2 btn-sm btn-secondary"
-						disabled={videoInProgress || downloadingVideo}
-						onclick={() => handleDownload('video')}
-					>
-						{#if downloadingVideo || videoInProgress}
-							<span class="loading loading-xs loading-spinner"></span>
-						{/if}
-						Download Video
-					</button>
-				{/if}
+				<div class="grid grid-cols-2 gap-2">
+					{#if !hasAudio}
+						<button
+							class="btn w-full gap-2 btn-sm btn-error"
+							disabled={audioInProgress || downloadingAudio}
+							onclick={() => handleDownload('audio')}
+						>
+							{#if downloadingAudio || audioInProgress}
+								<span class="loading loading-xs loading-spinner"></span>
+							{/if}
+							Audio
+						</button>
+					{/if}
+					{#if !hasVideo}
+						<button
+							class="btn w-full gap-2 btn-sm btn-error"
+							disabled={videoInProgress || downloadingVideo}
+							onclick={() => handleDownload('video')}
+						>
+							{#if downloadingVideo || videoInProgress}
+								<span class="loading loading-xs loading-spinner"></span>
+							{/if}
+							Video
+						</button>
+					{/if}
+				</div>
 			{/if}
 		</div>
-	{/if}
-</aside>
+	</aside>
+{/if}
