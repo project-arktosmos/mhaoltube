@@ -1,6 +1,7 @@
 import { writable, get, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { apiUrl } from '$lib/api-base';
+import { libraryService } from '$services/library.service';
 import {
 	extractVideoId,
 	type YouTubeSettings,
@@ -14,6 +15,7 @@ import {
 	type AudioQuality,
 	type AudioFormat,
 	type DownloadMode,
+	type MediaMode,
 	type VideoQuality,
 	type VideoFormat
 } from '$types/youtube.type';
@@ -23,12 +25,12 @@ const API_PREFIX = '/api/ytdl';
 // Default settings (used before server fetch completes)
 const initialSettings: YouTubeSettings = {
 	id: 'youtube-settings',
-	downloadMode: 'audio',
+	mediaMode: 'video',
+	downloadMode: 'both',
 	defaultQuality: 'best',
 	defaultFormat: 'aac',
 	defaultVideoQuality: 'best',
 	defaultVideoFormat: 'mp4',
-	libraryId: '',
 	poToken: '',
 	cookies: ''
 };
@@ -38,7 +40,6 @@ const initialState: YouTubeServiceState = {
 	initialized: false,
 	loading: false,
 	error: null,
-	libraryId: '',
 	downloads: [],
 	stats: null,
 	downloaderStatus: null,
@@ -74,10 +75,11 @@ class YouTubeService {
 		this.state.update((s) => ({ ...s, loading: true }));
 
 		try {
-			const [stats, downloaderStatus, settings] = await Promise.all([
+			const [stats, downloaderStatus, settings, downloads] = await Promise.all([
 				this.fetchJson<YouTubeManagerStats>('/api/ytdl/status'),
 				this.fetchJson<DownloaderStatus>('/api/ytdl/ytdlp/status'),
-				this.fetchJson<Omit<YouTubeSettings, 'id'>>('/api/ytdl/settings')
+				this.fetchJson<Omit<YouTubeSettings, 'id'>>('/api/ytdl/settings'),
+				this.fetchJson<YouTubeDownloadProgress[]>('/api/ytdl/downloads')
 			]);
 
 			// Populate the settings store from database
@@ -87,9 +89,9 @@ class YouTubeService {
 				...s,
 				initialized: true,
 				loading: false,
-				libraryId: settings.libraryId,
 				stats,
 				downloaderStatus,
+				downloads,
 				error: null
 			}));
 
@@ -233,7 +235,10 @@ class YouTubeService {
 				title: videoInfo?.title || 'Unknown',
 				mode: settings.downloadMode,
 				quality: settings.defaultQuality,
-				format: settings.defaultFormat
+				format: settings.defaultFormat,
+				thumbnailUrl: videoInfo?.thumbnailUrl ?? null,
+				durationSeconds: videoInfo?.duration ?? null,
+				channelName: videoInfo?.uploader ?? null
 			};
 
 			if (settings.downloadMode === 'video') {
@@ -311,7 +316,7 @@ class YouTubeService {
 			format: settings.defaultFormat
 		};
 
-		if (settings.downloadMode === 'video') {
+		if (settings.downloadMode === 'video' || settings.downloadMode === 'both') {
 			body.videoQuality = settings.defaultVideoQuality;
 			body.videoFormat = settings.defaultVideoFormat;
 		}
@@ -351,7 +356,52 @@ class YouTubeService {
 			format: settings.defaultFormat
 		};
 
-		if (settings.downloadMode === 'video') {
+		if (settings.downloadMode === 'video' || settings.downloadMode === 'both') {
+			body.videoQuality = settings.defaultVideoQuality;
+			body.videoFormat = settings.defaultVideoFormat;
+		}
+
+		try {
+			const result = await this.fetchJson<{ downloadId: string }>('/api/ytdl/downloads', {
+				method: 'POST',
+				body: JSON.stringify(body)
+			});
+
+			return result.downloadId;
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			this.state.update((s) => ({
+				...s,
+				error: `Failed to queue download: ${errorMsg}`
+			}));
+			return null;
+		}
+	}
+
+	async queueDownloadWithMode(
+		videoId: string,
+		title: string,
+		thumbnailUrl: string | null,
+		mode: DownloadMode
+	): Promise<string | null> {
+		if (!browser) return null;
+
+		const settings = this.get();
+		const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+		const body: Record<string, unknown> = {
+			url,
+			videoId,
+			title,
+			mode,
+			quality: settings.defaultQuality,
+			format: settings.defaultFormat,
+			thumbnailUrl,
+			durationSeconds: null,
+			channelName: null
+		};
+
+		if (mode === 'video' || mode === 'both') {
 			body.videoQuality = settings.defaultVideoQuality;
 			body.videoFormat = settings.defaultVideoFormat;
 		}
@@ -403,10 +453,6 @@ class YouTubeService {
 				method: 'PUT',
 				body: JSON.stringify(payload)
 			});
-
-			if (updates.libraryId !== undefined) {
-				this.state.update((s) => ({ ...s, libraryId: updates.libraryId! }));
-			}
 		} catch (error) {
 			// Revert on failure
 			this.store.set(current);
@@ -416,6 +462,10 @@ class YouTubeService {
 				error: `Failed to save settings: ${errorMsg}`
 			}));
 		}
+	}
+
+	setMediaMode(mode: MediaMode): void {
+		this.updateSettings({ mediaMode: mode });
 	}
 
 	setDownloadMode(mode: DownloadMode): void {
@@ -436,10 +486,6 @@ class YouTubeService {
 
 	setDefaultVideoFormat(format: VideoFormat): void {
 		this.updateSettings({ defaultVideoFormat: format });
-	}
-
-	setLibrary(libraryId: string): void {
-		this.updateSettings({ libraryId });
 	}
 
 	// ===== Getters =====
@@ -521,6 +567,9 @@ class YouTubeService {
 					}
 					return { ...s, downloads };
 				});
+				if (progress.state === 'completed') {
+					libraryService.fetchContent();
+				}
 			} catch {
 				// ignore parse errors
 			}

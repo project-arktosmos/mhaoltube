@@ -31,6 +31,7 @@ impl InnertubeApi {
         &self,
         video_id: &str,
         client: &InnertubeClient,
+        sts: Option<u64>,
         po_token: Option<&str>,
         visitor_data: Option<&str>,
     ) -> Result<PlayerResponse> {
@@ -39,7 +40,7 @@ impl InnertubeApi {
             INNERTUBE_BASE_URL, client.api_key
         );
 
-        let body = client.build_player_request(video_id, None, po_token, visitor_data);
+        let body = client.build_player_request(video_id, sts, po_token, visitor_data);
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

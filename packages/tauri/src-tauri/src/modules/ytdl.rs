@@ -30,7 +30,7 @@ impl Module for YtdlModule {
             settings: vec![
                 ModuleSettingDef {
                     key: "ytdl.downloadMode".to_string(),
-                    default: "audio".to_string(),
+                    default: "both".to_string(),
                     env_key: None,
                 },
                 ModuleSettingDef {
@@ -40,7 +40,7 @@ impl Module for YtdlModule {
                 },
                 ModuleSettingDef {
                     key: "ytdl.format".to_string(),
-                    default: "opus".to_string(),
+                    default: "aac".to_string(),
                     env_key: None,
                 },
                 ModuleSettingDef {
@@ -67,6 +67,11 @@ impl Module for YtdlModule {
                     key: "ytdl.cookies".to_string(),
                     default: String::new(),
                     env_key: Some("COOKIES".to_string()),
+                },
+                ModuleSettingDef {
+                    key: "ytdl.mediaMode".to_string(),
+                    default: "video".to_string(),
+                    env_key: None,
                 },
             ],
             link_sources: vec![ModuleLinkSource {

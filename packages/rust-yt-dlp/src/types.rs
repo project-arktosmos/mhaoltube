@@ -42,6 +42,7 @@ pub enum AudioFormat {
 pub enum DownloadMode {
     Audio,
     Video,
+    Both,
 }
 
 // ===== Video Quality =====
@@ -81,6 +82,16 @@ pub struct QueueDownloadRequest {
     pub format: Option<AudioFormat>,
     pub video_quality: Option<VideoQuality>,
     pub video_format: Option<VideoFormat>,
+    #[serde(default)]
+    pub video_output_dir: Option<String>,
+    #[serde(default)]
+    pub audio_output_dir: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
+    #[serde(default)]
+    pub channel_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +103,10 @@ pub struct QueuePlaylistRequest {
     pub format: Option<AudioFormat>,
     pub video_quality: Option<VideoQuality>,
     pub video_format: Option<VideoFormat>,
+    #[serde(default)]
+    pub video_output_dir: Option<String>,
+    #[serde(default)]
+    pub audio_output_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,6 +131,8 @@ pub struct DownloadProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub output_path: Option<String>,
+    pub video_output_path: Option<String>,
+    pub audio_output_path: Option<String>,
     pub error: Option<String>,
     pub mode: DownloadMode,
     pub quality: AudioQuality,
@@ -124,6 +141,7 @@ pub struct DownloadProgress {
     pub video_format: Option<VideoFormat>,
     pub thumbnail_url: Option<String>,
     pub duration_seconds: Option<f64>,
+    pub channel_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

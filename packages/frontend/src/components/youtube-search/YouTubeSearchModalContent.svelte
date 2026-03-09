@@ -1,7 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { youtubeSearchService } from '$services/youtube-search.service';
 	import { youtubeService } from '$services/youtube.service';
-	import { modalRouterService } from '$services/modal-router.service';
 	import YouTubeSearchInput from '$components/youtube-search/YouTubeSearchInput.svelte';
 	import YouTubeSearchResultCard from '$components/youtube-search/YouTubeSearchResultCard.svelte';
 	import type { YouTubeSearchItem } from '$types/youtube-search.type';
@@ -16,7 +16,7 @@
 		const videoUrl = `https://www.youtube.com${item.url}`;
 		youtubeService.setCurrentUrl(videoUrl);
 		youtubeService.fetchVideoInfo(videoUrl);
-		modalRouterService.openNavbar('youtube');
+		goto('/downloads');
 	}
 
 	function handleLoadMore() {

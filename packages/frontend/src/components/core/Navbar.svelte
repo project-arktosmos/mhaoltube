@@ -1,7 +1,8 @@
 <script lang="ts">
 	import classNames from 'classnames';
-	import { modalRouterService } from '$services/modal-router.service';
-	import ThemeToggle from '$components/core/ThemeToggle.svelte';
+	import { mediaModeService } from '$services/media-mode.service';
+	import { youtubeService } from '$services/youtube.service';
+	import YouTubeDownloadQueueModal from '$components/youtube/YouTubeDownloadQueueModal.svelte';
 
 	interface Props {
 		classes?: string;
@@ -10,87 +11,65 @@
 	let { classes = '' }: Props = $props();
 
 	let wrapperClasses = $derived(classNames('navbar bg-base-100 shadow-sm', classes));
+
+	const mediaModeStore = mediaModeService.store;
+	let mediaMode = $derived($mediaModeStore);
+
+	const ytState = youtubeService.state;
+	const ACTIVE_STATES = ['pending', 'fetching', 'downloading', 'muxing'];
+	let activeCount = $derived(
+		$ytState.downloads.filter((d) => ACTIVE_STATES.includes(d.state)).length
+	);
+
+	let queueOpen = $state(false);
 </script>
+
+<YouTubeDownloadQueueModal open={queueOpen} onClose={() => (queueOpen = false)} />
 
 <nav class={wrapperClasses}>
 	<div class="flex-1">
 		<a href="/" class="btn text-xl btn-ghost">Mhaol<span class="text-primary">Tube</span></a>
 	</div>
-
-	<div class="flex-none">
-		<!-- Desktop: horizontal buttons -->
-		<div class="hidden gap-1 lg:flex">
-			<button class="btn btn-sm btn-info" onclick={() => modalRouterService.openNavbar('youtube')}>
-				YouTube
-			</button>
+	<div class="flex-none flex items-center gap-2">
+		<div class="indicator">
+			{#if activeCount > 0}
+				<span class="badge badge-primary badge-xs indicator-item">{activeCount}</span>
+			{/if}
 			<button
-				class="btn btn-outline btn-sm btn-info"
-				onclick={() => modalRouterService.openNavbar('youtube-search')}
+				class="btn btn-sm btn-ghost px-4"
+				onclick={() => (queueOpen = true)}
+				aria-label="Download queue"
+				title="Download queue"
 			>
-				YT Search
-			</button>
-			<button
-				class="btn btn-sm btn-neutral"
-				onclick={() => modalRouterService.openNavbar('libraries')}
-			>
-				Library
-			</button>
-			<button
-				class="btn btn-ghost btn-sm"
-				onclick={() => modalRouterService.openNavbar('settings')}
-			>
-				Settings
-			</button>
-			<button class="btn btn-ghost btn-sm" onclick={() => modalRouterService.openNavbar('db')}>
-				DB
-			</button>
-			<button
-				class="btn btn-ghost btn-sm"
-				onclick={() => modalRouterService.openNavbar('yt-channels')}
-			>
-				YT Channels
-			</button>
-			<ThemeToggle />
-		</div>
-
-		<!-- Mobile: burger menu -->
-		<div class="dropdown dropdown-end lg:hidden">
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div tabindex="0" role="button" class="btn btn-ghost">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
+					class="h-5 w-5"
 					fill="none"
 					viewBox="0 0 24 24"
-					stroke-width="1.5"
 					stroke="currentColor"
-					class="h-6 w-6"
 				>
 					<path
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+						stroke-width="2"
+						d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
 					/>
 				</svg>
-			</div>
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<ul
-				tabindex="0"
-				class="dropdown-content menu z-50 mt-3 w-52 rounded-box bg-base-200 p-2 shadow"
+			</button>
+		</div>
+		<div class="join">
+			<button
+				class={classNames('btn join-item btn-sm', { 'btn-primary': mediaMode === 'audio' })}
+				onclick={() => mediaModeService.setMode('audio')}
 			>
-				<li><button onclick={() => modalRouterService.openNavbar('youtube')}>YouTube</button></li>
-				<li>
-					<button onclick={() => modalRouterService.openNavbar('youtube-search')}>YT Search</button>
-				</li>
-				<li>
-					<button onclick={() => modalRouterService.openNavbar('libraries')}>Library</button>
-				</li>
-				<li><button onclick={() => modalRouterService.openNavbar('settings')}>Settings</button></li>
-				<li><button onclick={() => modalRouterService.openNavbar('db')}>DB</button></li>
-				<li>
-					<button onclick={() => modalRouterService.openNavbar('yt-channels')}>YT Channels</button>
-				</li>
-				<li><ThemeToggle /></li>
-			</ul>
+				Audio
+			</button>
+			<button
+				class={classNames('btn join-item btn-sm', { 'btn-primary': mediaMode === 'video' })}
+				onclick={() => mediaModeService.setMode('video')}
+			>
+				Video
+			</button>
 		</div>
 	</div>
 </nav>

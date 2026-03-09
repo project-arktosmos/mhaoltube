@@ -1,202 +1,165 @@
 use crate::AppState;
 use axum::{
+    body::Body,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, Response, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::get,
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
+use serde::Serialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_default_library))
-        .route("/items/{item_id}/category", post(update_item_category).delete(clear_item_category))
+        .route("/fs", get(list_library_fs))
         .route(
-            "/items/{item_id}/media-type",
-            put(update_item_media_type),
+            "/content/{youtube_id}/stream/video",
+            get(stream_video),
         )
         .route(
-            "/items/{item_id}/tmdb",
-            put(link_tmdb).delete(unlink_tmdb),
+            "/content/{youtube_id}/stream/audio",
+            get(stream_audio),
         )
-        .route(
-            "/items/{item_id}/youtube",
-            put(link_youtube).delete(unlink_youtube),
-        )
-        .route(
-            "/items/{item_id}/musicbrainz",
-            put(link_musicbrainz).delete(unlink_musicbrainz),
-        )
-        .route("/items/{item_id}/stream", get(stream_item))
-        .route("/files", get(get_library_files))
-        .route("/scan", get(scan_library).post(scan_library))
-        .route("/media-types", get(get_media_types))
-        .route("/categories", get(get_categories))
 }
-
-// --- Response types matching frontend expectations ---
 
 #[derive(Serialize)]
 struct MappedLibrary {
     id: String,
     name: String,
     path: String,
-    #[serde(rename = "mediaTypes")]
-    media_types: Vec<String>,
     #[serde(rename = "dateAdded")]
     date_added: i64,
 }
 
-impl MappedLibrary {
-    fn from_row(row: crate::db::repo::library::LibraryRow) -> Self {
-        let media_types: Vec<String> =
-            serde_json::from_str(&row.media_types).unwrap_or_default();
-        Self {
-            id: row.id,
-            name: row.name,
-            path: row.path,
-            media_types,
-            date_added: row.date_added,
-        }
-    }
-}
-
 #[derive(Serialize)]
-struct MappedFileLink {
-    #[serde(rename = "serviceId")]
-    service_id: String,
-    #[serde(rename = "seasonNumber")]
-    season_number: Option<i64>,
-    #[serde(rename = "episodeNumber")]
-    episode_number: Option<i64>,
-}
-
-#[derive(Serialize)]
-struct MappedFile {
-    id: String,
+struct FsEntry {
     name: String,
-    path: String,
-    extension: String,
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    #[serde(rename = "categoryId")]
-    category_id: Option<String>,
-    links: HashMap<String, MappedFileLink>,
+    size: u64,
 }
 
 #[derive(Serialize)]
-struct LibraryFilesResponse {
-    #[serde(rename = "libraryPath")]
-    library_path: String,
-    files: Vec<MappedFile>,
+struct LibraryFs {
+    path: String,
+    audio: Vec<FsEntry>,
+    video: Vec<FsEntry>,
 }
 
-// --- Helper to map library items with their links ---
-
-fn map_library_files(state: &AppState, library_id: &str) -> Vec<MappedFile> {
-    let items = state.library_items.get_by_library(library_id);
-    items
-        .into_iter()
-        .map(|item| {
-            let link_rows = state.library_item_links.get_by_item(&item.id);
-            let mut links = HashMap::new();
-            for link in link_rows {
-                links.insert(
-                    link.service,
-                    MappedFileLink {
-                        service_id: link.service_id,
-                        season_number: link.season_number,
-                        episode_number: link.episode_number,
-                    },
-                );
+fn list_dir(dir: &std::path::Path) -> Vec<FsEntry> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<FsEntry> = entries
+        .flatten()
+        .filter_map(|e| {
+            let path = e.path();
+            if !path.is_file() {
+                return None;
             }
-            let name = std::path::Path::new(&item.path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            MappedFile {
-                id: item.id,
-                name,
-                path: item.path,
-                extension: item.extension,
-                media_type: item.media_type,
-                category_id: item.category_id,
-                links,
+            let name = path.file_name()?.to_str()?.to_string();
+            if name.starts_with('.') {
+                return None;
             }
+            let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+            Some(FsEntry { name, size })
         })
-        .collect()
+        .collect();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
 }
 
-// --- Route handlers ---
+async fn list_library_fs(State(state): State<AppState>) -> impl IntoResponse {
+    let library = match state.libraries.get(crate::AppState::DEFAULT_LIBRARY_ID) {
+        Some(lib) => lib,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Library not found" })),
+            )
+                .into_response()
+        }
+    };
+    let base = std::path::PathBuf::from(&library.path);
+    Json(LibraryFs {
+        path: library.path,
+        audio: list_dir(&base.join("audio").join(".cache")),
+        video: list_dir(&base.join("video").join(".cache")),
+    })
+    .into_response()
+}
 
 async fn get_default_library(State(state): State<AppState>) -> impl IntoResponse {
     match state.libraries.get(crate::AppState::DEFAULT_LIBRARY_ID) {
-        Some(row) => Json(MappedLibrary::from_row(row)).into_response(),
+        Some(row) => Json(MappedLibrary {
+            id: row.id,
+            name: row.name,
+            path: row.path,
+            date_added: row.date_added,
+        })
+        .into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
-#[derive(Deserialize)]
-struct UpdateCategoryBody {
-    #[serde(alias = "category_id", alias = "categoryId")]
-    category_id: String,
-}
-
-async fn update_item_category(
+async fn stream_video(
     State(state): State<AppState>,
-    Path(item_id): Path<String>,
-    Json(body): Json<UpdateCategoryBody>,
+    Path(youtube_id): Path<String>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    state
-        .library_items
-        .update_category(&item_id, &body.category_id);
-    StatusCode::OK
-}
-
-async fn clear_item_category(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-) -> impl IntoResponse {
-    state.library_items.clear_category(&item_id);
-    StatusCode::OK
-}
-
-#[derive(Deserialize)]
-struct UpdateMediaTypeBody {
-    #[serde(alias = "media_type", alias = "mediaType", alias = "mediaTypeId")]
-    media_type: String,
-}
-
-async fn update_item_media_type(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-    Json(body): Json<UpdateMediaTypeBody>,
-) -> impl IntoResponse {
-    state
-        .library_items
-        .update_media_type(&item_id, &body.media_type);
-    StatusCode::OK
-}
-
-/// GET /api/libraries/items/{item_id}/stream — stream a media file
-async fn stream_item(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-) -> impl IntoResponse {
-    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
-
-    let item = match state.library_items.get(&item_id) {
-        Some(item) if item.library_id == lib_id => item,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let content = match state.youtube_content.get(&youtube_id) {
+        Some(c) => c,
+        None => return StatusCode::NOT_FOUND.into_response(),
     };
 
-    let path = std::path::Path::new(&item.path);
-    let bytes = match tokio::fs::read(path).await {
-        Ok(b) => b,
+    let path_str = match content.video_path {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    stream_file(&path_str, range.as_deref()).await
+}
+
+async fn stream_audio(
+    State(state): State<AppState>,
+    Path(youtube_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let content = match state.youtube_content.get(&youtube_id) {
+        Some(c) => c,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let path_str = match content.audio_path {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    stream_file(&path_str, range.as_deref()).await
+}
+
+pub(crate) async fn stream_file(path_str: &str, range_header: Option<&str>) -> axum::response::Response {
+    let path = std::path::Path::new(path_str);
+
+    let file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let file_size = match file.metadata().await {
+        Ok(m) => m.len(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
     let content_type = match path.extension().and_then(|e| e.to_str()) {
@@ -215,383 +178,56 @@ async fn stream_item(
         _ => "application/octet-stream",
     };
 
-    ([(header::CONTENT_TYPE, content_type)], bytes).into_response()
-}
+    if let Some(range_str) = range_header {
+        if let Some(range_val) = range_str.strip_prefix("bytes=") {
+            let parts: Vec<&str> = range_val.splitn(2, '-').collect();
+            if parts.len() == 2 {
+                let start: u64 = parts[0].parse().unwrap_or(0);
+                let end: u64 = parts[1]
+                    .parse()
+                    .unwrap_or_else(|_| file_size.saturating_sub(1))
+                    .min(file_size.saturating_sub(1));
 
-/// GET /api/libraries/files — returns files with links in frontend format
-async fn get_library_files(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
-    let library = match state.libraries.get(lib_id) {
-        Some(lib) => lib,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Library not found" })),
-            )
-                .into_response();
-        }
-    };
-
-    let files = map_library_files(&state, lib_id);
-    Json(LibraryFilesResponse {
-        library_path: library.path,
-        files,
-    })
-    .into_response()
-}
-
-/// POST/GET /api/libraries/scan — scan directory and return updated files
-async fn scan_library(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let lib_id = crate::AppState::DEFAULT_LIBRARY_ID;
-    let library = match state.libraries.get(lib_id) {
-        Some(lib) => lib,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "Library not found" })),
-            )
-                .into_response();
-        }
-    };
-
-    let media_types: Vec<String> =
-        serde_json::from_str(&library.media_types).unwrap_or_default();
-    let ext_map = build_extension_map(&media_types);
-    let include_other = media_types.iter().any(|t| t == "other");
-
-    if !ext_map.is_empty() || include_other {
-        let mut scanned_files = Vec::new();
-        scan_dir(&library.path, lib_id, &ext_map, include_other, &mut scanned_files);
-        state.library_items.sync_library(lib_id, &scanned_files);
-    }
-
-    generate_auto_lists(&state, lib_id);
-
-    // Spawn background task to pre-fetch YouTube oEmbed metadata
-    {
-        let db = state.db.clone();
-        let items = state.library_items.get_by_library(lib_id);
-        let links_repo = state.library_item_links.clone();
-        tokio::spawn(async move {
-            let mut video_ids: Vec<String> = Vec::new();
-            for item in &items {
-                if let Some(link) = links_repo.get_by_item_and_service(&item.id, "youtube") {
-                    if link.service_id.len() == 11 && !video_ids.contains(&link.service_id) {
-                        video_ids.push(link.service_id);
-                    }
+                if start >= file_size || start > end {
+                    return Response::builder()
+                        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                        .header(header::CONTENT_RANGE, format!("bytes */{}", file_size))
+                        .body(Body::empty())
+                        .unwrap();
                 }
-            }
-            if !video_ids.is_empty() {
-                tracing::info!(
-                    "Pre-fetching YouTube metadata for {} video(s)",
-                    video_ids.len()
-                );
-                for vid in &video_ids {
-                    if super::youtube::fetch_and_cache_oembed(&db, vid).await.is_none() {
-                        tracing::warn!("Failed to pre-fetch YouTube metadata for {}", vid);
-                    }
+
+                let length = end - start + 1;
+                let mut file = file;
+
+                if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
-            }
-        });
-    }
 
-    let files = map_library_files(&state, lib_id);
-    Json(LibraryFilesResponse {
-        library_path: library.path,
-        files,
-    })
-    .into_response()
-}
+                let limited = file.take(length);
+                let stream = ReaderStream::new(limited);
 
-async fn get_media_types(State(state): State<AppState>) -> impl IntoResponse {
-    Json(state.media_types.get_all())
-}
-
-async fn get_categories(State(state): State<AppState>) -> impl IntoResponse {
-    Json(state.categories.get_all())
-}
-
-// --- Library item link handlers ---
-
-fn validate_item(state: &AppState, item_id: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    match state.library_items.get(item_id) {
-        Some(item) if item.library_id == crate::AppState::DEFAULT_LIBRARY_ID => Ok(()),
-        _ => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Library item not found" })))),
-    }
-}
-
-#[derive(Deserialize)]
-struct LinkTmdbBody {
-    #[serde(rename = "tmdbId")]
-    tmdb_id: i64,
-    #[serde(rename = "seasonNumber")]
-    season_number: Option<i64>,
-    #[serde(rename = "episodeNumber")]
-    episode_number: Option<i64>,
-}
-
-async fn link_tmdb(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-    Json(body): Json<LinkTmdbBody>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    state.library_item_links.upsert(
-        &uuid::Uuid::new_v4().to_string(), &item_id, "tmdb",
-        &body.tmdb_id.to_string(), body.season_number, body.episode_number,
-    );
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-async fn unlink_tmdb(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    state.library_item_links.delete(&item_id, "tmdb");
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-#[derive(Deserialize)]
-struct LinkYoutubeBody {
-    #[serde(rename = "youtubeId")]
-    youtube_id: String,
-}
-
-async fn link_youtube(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-    Json(body): Json<LinkYoutubeBody>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    let yt_id = body.youtube_id.trim();
-    if yt_id.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "youtubeId must be a non-empty string" }))).into_response();
-    }
-    state.library_item_links.upsert(
-        &uuid::Uuid::new_v4().to_string(), &item_id, "youtube", yt_id, None, None,
-    );
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-async fn unlink_youtube(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    state.library_item_links.delete(&item_id, "youtube");
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-#[derive(Deserialize)]
-struct LinkMusicbrainzBody {
-    #[serde(rename = "musicbrainzId")]
-    musicbrainz_id: String,
-}
-
-async fn link_musicbrainz(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-    Json(body): Json<LinkMusicbrainzBody>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    let mb_id = body.musicbrainz_id.trim();
-    if mb_id.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "musicbrainzId must be a non-empty string" }))).into_response();
-    }
-    state.library_item_links.upsert(
-        &uuid::Uuid::new_v4().to_string(), &item_id, "musicbrainz", mb_id, None, None,
-    );
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-async fn unlink_musicbrainz(
-    State(state): State<AppState>,
-    Path(item_id): Path<String>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_item(&state, &item_id) { return e.into_response(); }
-    state.library_item_links.delete(&item_id, "musicbrainz");
-    Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-// --- Scan helpers (ported from packages/tauri/src-tauri/src/commands/db.rs) ---
-
-fn build_extension_map(media_types: &[String]) -> HashMap<&'static str, &'static str> {
-    let mut map = HashMap::new();
-    for mt in media_types {
-        match mt.as_str() {
-            "video" => {
-                for ext in &["mp4", "mkv", "avi", "mov", "wmv", "webm", "flv", "m4v"] {
-                    map.insert(*ext, "video");
-                }
-            }
-            "audio" => {
-                for ext in &["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"] {
-                    map.insert(*ext, "audio");
-                }
-            }
-            "image" => {
-                for ext in &["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff"] {
-                    map.insert(*ext, "image");
-                }
-            }
-            _ => {}
-        }
-    }
-    map
-}
-
-fn scan_dir(
-    dir: &str,
-    library_id: &str,
-    ext_map: &HashMap<&str, &str>,
-    include_other: bool,
-    files: &mut Vec<crate::db::repo::library_item::InsertLibraryItem>,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let file_type = match entry.file_type() {
-            Ok(ft) => ft,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-
-        if file_type.is_dir() {
-            let name = entry.file_name();
-            if !name.to_string_lossy().starts_with('.') {
-                scan_dir(&path.to_string_lossy(), library_id, ext_map, include_other, files);
-            }
-        } else if file_type.is_file() {
-            let ext_lower = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
-                .unwrap_or_default();
-            let media_type = if let Some(mt) = ext_map.get(ext_lower.as_str()) {
-                Some(mt.to_string())
-            } else if include_other {
-                Some("other".to_string())
-            } else {
-                None
-            };
-            if let Some(media_type) = media_type {
-                files.push(crate::db::repo::library_item::InsertLibraryItem {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    library_id: library_id.to_string(),
-                    path: path.to_string_lossy().to_string(),
-                    extension: ext_lower,
-                    media_type,
-                    category_id: None,
-                });
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_TYPE, content_type)
+                    .header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {}-{}/{}", start, end, file_size),
+                    )
+                    .header(header::CONTENT_LENGTH, length.to_string())
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .body(Body::from_stream(stream))
+                    .unwrap();
             }
         }
     }
-}
 
-/// After syncing library items, auto-generate media lists from directories
-/// containing 2+ files of the same media type.
-fn generate_auto_lists(state: &AppState, library_id: &str) {
-    let items = state.library_items.get_by_library(library_id);
-
-    // Group items by parent directory and media type
-    let mut dir_items: HashMap<String, Vec<&crate::db::repo::library_item::LibraryItemRow>> =
-        HashMap::new();
-    for item in &items {
-        if let Some(parent) = std::path::Path::new(&item.path).parent() {
-            let dir = parent.to_string_lossy().to_string();
-            dir_items.entry(dir).or_default().push(item);
-        }
-    }
-
-    let mut active_source_paths: HashSet<String> = HashSet::new();
-
-    for (dir_path, dir_files) in &dir_items {
-        let mut video_items: Vec<&crate::db::repo::library_item::LibraryItemRow> = Vec::new();
-        let mut audio_items: Vec<&crate::db::repo::library_item::LibraryItemRow> = Vec::new();
-
-        for item in dir_files {
-            match item.media_type.as_str() {
-                "video" => video_items.push(item),
-                "audio" => audio_items.push(item),
-                _ => {}
-            }
-        }
-
-        if video_items.len() >= 2 {
-            let source_key = format!("{}:video", dir_path);
-            active_source_paths.insert(source_key.clone());
-            upsert_auto_list(state, library_id, dir_path, "video", &source_key, &mut video_items);
-        }
-
-        if audio_items.len() >= 2 {
-            let source_key = format!("{}:audio", dir_path);
-            active_source_paths.insert(source_key.clone());
-            upsert_auto_list(state, library_id, dir_path, "audio", &source_key, &mut audio_items);
-        }
-    }
-
-    // Cleanup: remove auto lists whose source_path is no longer active
-    let existing_auto = state.media_lists.get_auto_by_library(library_id);
-    for list in existing_auto {
-        if let Some(ref sp) = list.source_path {
-            if !active_source_paths.contains(sp) {
-                state.media_list_items.delete_by_list(&list.id);
-                state.media_lists.delete(&list.id);
-            }
-        }
-    }
-}
-
-fn upsert_auto_list(
-    state: &AppState,
-    library_id: &str,
-    dir_path: &str,
-    media_type: &str,
-    source_path: &str,
-    items: &mut [&crate::db::repo::library_item::LibraryItemRow],
-) {
-    let list_id = match state.media_lists.get_by_source_path(source_path) {
-        Some(existing) => existing.id,
-        None => {
-            let id = uuid::Uuid::new_v4().to_string();
-            let title = std::path::Path::new(dir_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Untitled")
-                .to_string();
-            state.media_lists.insert(
-                &id,
-                library_id,
-                &title,
-                None,
-                None,
-                media_type,
-                "auto",
-                Some(source_path),
-            );
-            id
-        }
-    };
-
-    items.sort_by(|a, b| a.path.cmp(&b.path));
-    let list_items: Vec<(String, String, i64)> = items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            (
-                uuid::Uuid::new_v4().to_string(),
-                item.id.clone(),
-                i as i64,
-            )
-        })
-        .collect();
-    state.media_list_items.sync_list(&list_id, &list_items);
+    // No Range header — stream entire file
+    let stream = ReaderStream::new(file);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, file_size.to_string())
+        .header(header::ACCEPT_RANGES, "bytes")
+        .body(Body::from_stream(stream))
+        .unwrap()
 }

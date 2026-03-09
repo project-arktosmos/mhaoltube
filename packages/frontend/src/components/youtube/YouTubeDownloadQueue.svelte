@@ -81,19 +81,21 @@
 									>
 										{getStateLabel(download.state)}
 									</span>
-									{#if download.state === 'downloading' || download.state === 'muxing'}
+									{#if download.state === 'downloading'}
 										<span class="text-sm text-base-content/60">
 											{getProgressPercent(download)}%
 										</span>
 									{/if}
 								</div>
 
-								{#if download.state === 'downloading' || download.state === 'muxing'}
+								{#if download.state === 'downloading'}
 									<progress
 										class="progress mt-2 w-full progress-primary"
 										value={getProgressPercent(download)}
 										max="100"
 									></progress>
+								{:else if download.state === 'muxing'}
+									<progress class="progress mt-2 w-full progress-primary"></progress>
 								{/if}
 
 								{#if download.error}

@@ -33,9 +33,20 @@ export const AUDIO_FORMAT_OPTIONS: { value: AudioFormat; label: string; extensio
 	{ value: 'opus', label: 'Opus', extension: 'opus' }
 ];
 
+// ===== Media Mode =====
+
+export type MediaMode = 'audio' | 'video';
+
 // ===== Download Mode =====
 
-export type DownloadMode = 'audio' | 'video';
+export type DownloadMode = 'audio' | 'video' | 'both';
+
+export const DOWNLOAD_MODE_OPTIONS: { value: DownloadMode; label: string; description: string }[] =
+	[
+		{ value: 'both', label: 'Both', description: 'Download audio and video' },
+		{ value: 'audio', label: 'Audio only', description: 'Download audio track only' },
+		{ value: 'video', label: 'Video only', description: 'Download video with audio' }
+	];
 
 // ===== Video Quality =====
 
@@ -71,6 +82,8 @@ export interface YouTubeDownloadProgress {
 	downloadedBytes: number;
 	totalBytes: number;
 	outputPath: string | null;
+	videoOutputPath: string | null;
+	audioOutputPath: string | null;
 	error: string | null;
 	mode: DownloadMode;
 	quality: AudioQuality;
@@ -132,7 +145,6 @@ export interface YouTubeServiceState {
 	initialized: boolean;
 	loading: boolean;
 	error: string | null;
-	libraryId: string;
 	downloads: YouTubeDownloadProgress[];
 	stats: YouTubeManagerStats | null;
 	downloaderStatus: DownloaderStatus | null;
@@ -145,16 +157,30 @@ export interface YouTubeServiceState {
 	fetchingPlaylistInfo: boolean;
 }
 
+// ===== YouTube Content (downloaded media) =====
+
+export interface YouTubeContent {
+	youtubeId: string;
+	title: string;
+	thumbnailUrl: string | null;
+	durationSeconds: number | null;
+	channelName: string | null;
+	channelId: string | null;
+	hasVideo: boolean;
+	hasAudio: boolean;
+	createdAt: string;
+}
+
 // ===== Settings (database) =====
 
 export interface YouTubeSettings {
 	id: ID;
+	mediaMode: MediaMode;
 	downloadMode: DownloadMode;
 	defaultQuality: AudioQuality;
 	defaultFormat: AudioFormat;
 	defaultVideoQuality: VideoQuality;
 	defaultVideoFormat: VideoFormat;
-	libraryId: string;
 	poToken: string;
 	cookies: string;
 }
@@ -274,6 +300,22 @@ export interface YouTubeChannelMeta {
 	avatar: string;
 	description: string;
 	subscriberText: string;
+}
+
+// ===== Right Panel =====
+
+export interface RightPanelVideo {
+	videoId: string;
+	title: string;
+	thumbnail: string;
+	views?: number;
+	viewsText?: string;
+	publishedText?: string;
+	uploaderName?: string;
+	uploaderAvatar?: string;
+	uploaderVerified?: boolean;
+	hasVideo?: boolean;
+	hasAudio?: boolean;
 }
 
 // ===== Channel RSS Feed =====

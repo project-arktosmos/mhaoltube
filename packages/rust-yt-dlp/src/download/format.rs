@@ -27,7 +27,7 @@ pub fn select_formats(
 ) -> Result<SelectedFormats, YtDlpError> {
     match mode {
         DownloadMode::Audio => select_audio_format(formats, audio_quality, audio_format, has_po_token),
-        DownloadMode::Video => select_video_formats(
+        DownloadMode::Video | DownloadMode::Both => select_video_formats(
             formats,
             video_quality.unwrap_or(&VideoQuality::Best),
             video_format.unwrap_or(&VideoFormat::Mp4),
@@ -41,39 +41,38 @@ fn select_audio_format(
     formats: &[ResolvedFormat],
     _quality: &AudioQuality,
     _format: &AudioFormat,
-    has_po_token: bool,
+    _has_po_token: bool,
 ) -> Result<SelectedFormats, YtDlpError> {
-    // When a PO token is available, use adaptive audio-only streams for best quality.
-    if has_po_token {
-        let mut audio_only: Vec<&ResolvedFormat> = formats
-            .iter()
-            .filter(|f| f.is_audio_only)
-            .collect();
+    // Always prefer adaptive audio-only streams (available with or without PO token).
+    let mut audio_only: Vec<&ResolvedFormat> = formats
+        .iter()
+        .filter(|f| f.is_audio_only)
+        .collect();
 
-        if !audio_only.is_empty() {
-            audio_only.sort_by(|a, b| b.bitrate.cmp(&a.bitrate));
-            let selected = audio_only[0];
+    if !audio_only.is_empty() {
+        audio_only.sort_by(|a, b| b.bitrate.cmp(&a.bitrate));
+        let selected = audio_only[0];
 
-            log::info!(
-                "Audio download: using adaptive audio itag={} ({} codec, {} container, {} kbps)",
-                selected.itag,
-                selected.codec,
-                selected.container,
-                selected.bitrate / 1000,
-            );
+        log::info!(
+            "Audio download: using adaptive audio itag={} ({} codec, {} container, {} kbps)",
+            selected.itag,
+            selected.codec,
+            selected.container,
+            selected.bitrate / 1000,
+        );
 
-            return Ok(SelectedFormats {
-                video: None,
-                audio: selected.clone(),
-                needs_muxing: false,
-                output_extension: selected.container.clone(),
-                needs_audio_extraction: false,
-            });
-        }
-        log::warn!("No adaptive audio formats found despite having PO token, falling back to muxed");
+        return Ok(SelectedFormats {
+            video: None,
+            audio: selected.clone(),
+            needs_muxing: false,
+            output_extension: selected.container.clone(),
+            needs_audio_extraction: false,
+        });
     }
 
     // Fallback: use muxed format and extract audio via ffmpeg
+    log::warn!("No adaptive audio-only formats found, falling back to muxed stream (requires ffmpeg for extraction)");
+
     let mut muxed: Vec<&ResolvedFormat> = formats
         .iter()
         .filter(|f| !f.is_audio_only && !f.is_video_only)

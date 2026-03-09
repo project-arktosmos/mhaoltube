@@ -1,5 +1,5 @@
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::get,
@@ -21,6 +21,10 @@ struct SearchQuery {
 
 #[derive(Serialize)]
 struct SearchItem {
+    #[serde(rename = "videoId")]
+    video_id: String,
+    #[serde(skip)]
+    channel_id: Option<String>,
     #[serde(rename = "type")]
     item_type: String,
     url: String,
@@ -68,7 +72,10 @@ struct SearchResponse {
     continuation: Option<String>,
 }
 
-async fn search(Query(query): Query<SearchQuery>) -> impl IntoResponse {
+async fn search(
+    State(state): State<crate::AppState>,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
     let q = match &query.q {
         Some(q) if !q.is_empty() => q.clone(),
         _ => {
@@ -84,7 +91,7 @@ async fn search(Query(query): Query<SearchQuery>) -> impl IntoResponse {
         "context": {
             "client": {
                 "clientName": "WEB",
-                "clientVersion": "2.20240101.00.00",
+                "clientVersion": "2.20260301.01.00",
                 "hl": "en",
                 "gl": "US"
             }
@@ -101,6 +108,11 @@ async fn search(Query(query): Query<SearchQuery>) -> impl IntoResponse {
     let resp = match client
         .post(INNERTUBE_URL)
         .header("Content-Type", "application/json")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+        .header("X-YouTube-Client-Name", "1")
+        .header("X-YouTube-Client-Version", "2.20260301.01.00")
+        .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/")
         .json(&body)
         .send()
         .await
@@ -135,6 +147,19 @@ async fn search(Query(query): Query<SearchQuery>) -> impl IntoResponse {
     };
 
     let (items, channels, continuation) = parse_innertube_response(&data);
+
+    for item in &items {
+        state.youtube_content.upsert(
+            &item.video_id,
+            &item.title,
+            Some(item.thumbnail.as_str()).filter(|s| !s.is_empty()),
+            Some(item.duration).filter(|&d| d > 0),
+            Some(item.uploader_name.as_str()).filter(|s| !s.is_empty()),
+            item.channel_id.as_deref(),
+            None,
+            None,
+        );
+    }
 
     Json(SearchResponse {
         items,
@@ -200,7 +225,12 @@ fn parse_innertube_response(
 }
 
 fn parse_video_renderer(v: &serde_json::Value) -> Option<SearchItem> {
-    let video_id = v.get("videoId")?.as_str()?;
+    let video_id = v.get("videoId")?.as_str()?.to_string();
+
+    let channel_id = v
+        .pointer("/ownerText/runs/0/navigationEndpoint/browseEndpoint/browseId")
+        .and_then(|t| t.as_str())
+        .map(String::from);
     let title = v
         .pointer("/title/runs/0/text")
         .and_then(|t| t.as_str())
@@ -262,6 +292,8 @@ fn parse_video_renderer(v: &serde_json::Value) -> Option<SearchItem> {
         .unwrap_or(false);
 
     Some(SearchItem {
+        video_id: video_id.clone(),
+        channel_id,
         item_type: "stream".to_string(),
         url: format!("/watch?v={}", video_id),
         title,

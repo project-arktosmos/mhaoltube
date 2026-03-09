@@ -22,6 +22,7 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
+		"@tauri-apps/api": "^2.10.1",
 		"classnames": "^2.5.1",
 		"common": "workspace:*",
 		"fflate": "^0.8.2",

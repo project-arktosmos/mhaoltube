@@ -1,7 +1,7 @@
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive},
         IntoResponse, Sse,
@@ -22,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/downloads/queue", delete(clear_queue))
         .route("/downloads/playlist", post(queue_playlist))
         .route("/downloads/events", get(download_events))
+        .route("/downloads/{id}/stream/video", get(stream_download_video))
         .route("/info/video", get(video_info))
         .route("/info/playlist", get(playlist_info))
         .route("/settings", get(get_settings).put(update_settings))
@@ -45,10 +46,40 @@ async fn list_downloads(State(state): State<AppState>) -> impl IntoResponse {
     Json(serde_json::to_value(state.ytdl_manager.get_all_progress()).unwrap())
 }
 
+/// Resolve the library cache directories for video and audio output.
+fn resolve_output_dirs(state: &AppState) -> (Option<String>, Option<String>) {
+    let lib = state.libraries.get(crate::AppState::DEFAULT_LIBRARY_ID);
+    match lib {
+        Some(lib) => {
+            let base = std::path::Path::new(&lib.path);
+            let video_dir = base.join("video").join(".cache");
+            let audio_dir = base.join("audio").join(".cache");
+            std::fs::create_dir_all(&video_dir).ok();
+            std::fs::create_dir_all(&audio_dir).ok();
+            (
+                Some(video_dir.to_string_lossy().to_string()),
+                Some(audio_dir.to_string_lossy().to_string()),
+            )
+        }
+        None => (None, None),
+    }
+}
+
 async fn queue_download(
     State(state): State<AppState>,
-    Json(body): Json<mhaoltube_yt_dlp::QueueDownloadRequest>,
+    Json(mut body): Json<mhaoltube_yt_dlp::QueueDownloadRequest>,
 ) -> impl IntoResponse {
+    // Set output dirs from library if not already specified
+    if body.video_output_dir.is_none() || body.audio_output_dir.is_none() {
+        let (video_dir, audio_dir) = resolve_output_dirs(&state);
+        if body.video_output_dir.is_none() {
+            body.video_output_dir = video_dir;
+        }
+        if body.audio_output_dir.is_none() {
+            body.audio_output_dir = audio_dir;
+        }
+    }
+
     let download_id = state.ytdl_manager.queue_download(body.clone());
 
     state.youtube_downloads.upsert(
@@ -66,7 +97,7 @@ async fn queue_download(
             .as_ref()
             .map(|m| serde_json::to_string(m).unwrap_or_default())
             .as_deref()
-            .unwrap_or("\"Audio\""),
+            .unwrap_or("\"both\""),
         body.quality
             .as_ref()
             .map(|q| serde_json::to_string(q).unwrap_or_default())
@@ -79,8 +110,8 @@ async fn queue_download(
             .unwrap_or("\"Opus\""),
         None,
         None,
-        None,
-        None,
+        body.thumbnail_url.as_deref(),
+        body.duration_seconds.map(|d| d as i64),
     );
 
     (
@@ -133,8 +164,18 @@ struct QueuePlaylistBody {
 
 async fn queue_playlist(
     State(state): State<AppState>,
-    Json(body): Json<QueuePlaylistBody>,
+    Json(mut body): Json<QueuePlaylistBody>,
 ) -> impl IntoResponse {
+    if body.request.video_output_dir.is_none() || body.request.audio_output_dir.is_none() {
+        let (video_dir, audio_dir) = resolve_output_dirs(&state);
+        if body.request.video_output_dir.is_none() {
+            body.request.video_output_dir = video_dir;
+        }
+        if body.request.audio_output_dir.is_none() {
+            body.request.audio_output_dir = audio_dir;
+        }
+    }
+
     let ids = state.ytdl_manager.queue_playlist(body.request);
     (
         StatusCode::CREATED,
@@ -147,6 +188,7 @@ async fn download_events(
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let mut rx = state.ytdl_manager.subscribe_events();
     let youtube_downloads = state.youtube_downloads.clone();
+    let youtube_content = state.youtube_content.clone();
 
     let stream = async_stream::stream! {
         while let Ok(event) = rx.recv().await {
@@ -172,6 +214,21 @@ async fn download_events(
                         progress.thumbnail_url.as_deref(),
                         progress.duration_seconds.map(|d| d as i64),
                     );
+
+                    // On completion, upsert into youtube_content
+                    if progress.state == mhaoltube_yt_dlp::DownloadState::Completed {
+                        youtube_content.upsert(
+                            &progress.video_id,
+                            &progress.title,
+                            progress.thumbnail_url.as_deref(),
+                            progress.duration_seconds.map(|d| d as i64),
+                            progress.channel_name.as_deref(),
+                            None,
+                            progress.video_output_path.as_deref(),
+                            progress.audio_output_path.as_deref(),
+                        );
+                    }
+
                     if let Ok(json) = serde_json::to_string(&progress) {
                         yield Ok(Event::default().event("progress").data(json));
                     }
@@ -225,13 +282,8 @@ async fn playlist_info(
 }
 
 async fn get_settings(State(state): State<AppState>) -> impl IntoResponse {
-    let library_id = state
-        .metadata
-        .get("youtube.libraryId")
-        .map(|r| r.value)
-        .unwrap_or_default();
     let settings = serde_json::json!({
-        "downloadMode": state.settings.get("ytdl.downloadMode").unwrap_or_else(|| "audio".to_string()),
+        "downloadMode": state.settings.get("ytdl.downloadMode").unwrap_or_else(|| "both".to_string()),
         "defaultQuality": state.settings.get("ytdl.quality").unwrap_or_else(|| "best".to_string()),
         "defaultFormat": state.settings.get("ytdl.format").unwrap_or_else(|| "aac".to_string()),
         "defaultVideoQuality": state.settings.get("ytdl.videoQuality").unwrap_or_else(|| "best".to_string()),
@@ -239,7 +291,7 @@ async fn get_settings(State(state): State<AppState>) -> impl IntoResponse {
         "poToken": state.settings.get("ytdl.poToken").unwrap_or_default(),
         "visitorData": state.settings.get("ytdl.visitorData").unwrap_or_default(),
         "cookies": state.settings.get("ytdl.cookies").unwrap_or_default(),
-        "libraryId": library_id,
+        "mediaMode": state.settings.get("ytdl.mediaMode").unwrap_or_else(|| "video".to_string()),
     });
     Json(settings)
 }
@@ -254,7 +306,6 @@ async fn update_settings(
                 serde_json::Value::String(s) => s.clone(),
                 other => other.to_string(),
             };
-            // Map frontend field names to internal storage keys
             let storage_key = match key.as_str() {
                 "defaultQuality" => "quality",
                 "defaultFormat" => "format",
@@ -264,9 +315,6 @@ async fn update_settings(
             };
 
             match storage_key {
-                "libraryId" => {
-                    state.metadata.set_string("youtube.libraryId", &str_val);
-                }
                 "poToken" | "visitorData" | "cookies" => {
                     state.settings.set(&format!("ytdl.{}", storage_key), &str_val);
                     let config_update = serde_json::json!({ storage_key: str_val });
@@ -291,4 +339,31 @@ async fn ytdlp_status(State(_state): State<AppState>) -> impl IntoResponse {
         "version": format!("native-rust-{}", env!("CARGO_PKG_VERSION")),
         "downloading": false,
     }))
+}
+
+async fn stream_download_video(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let progress = match state.ytdl_manager.get_progress(&id) {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let path_str = match progress.video_output_path {
+        Some(p) => p,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if !std::path::Path::new(&path_str).exists() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let range = headers
+        .get(axum::http::header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
+    crate::api::libraries::stream_file(&path_str, range.as_deref()).await
 }

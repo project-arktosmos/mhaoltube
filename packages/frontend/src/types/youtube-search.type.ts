@@ -1,4 +1,5 @@
 export interface YouTubeSearchItem {
+	videoId: string;
 	type: string;
 	url: string;
 	title: string;

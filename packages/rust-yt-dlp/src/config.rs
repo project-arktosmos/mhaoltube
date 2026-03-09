@@ -17,7 +17,7 @@ impl Default for YtDownloadConfig {
     fn default() -> Self {
         Self {
             output_path: default_output_path(),
-            default_quality: AudioQuality::High,
+            default_quality: AudioQuality::Best,
             default_format: AudioFormat::Aac,
             po_token: None,
             visitor_data: None,
