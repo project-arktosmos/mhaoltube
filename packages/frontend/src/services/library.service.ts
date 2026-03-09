@@ -126,12 +126,14 @@ class LibraryService {
 	}
 
 	async deleteAudio(youtubeId: string): Promise<void> {
-		await this.fetchJson(`/api/media/${youtubeId}/audio`, { method: 'DELETE' });
+		const response = await fetch(apiUrl(`/api/media/${youtubeId}/audio`), { method: 'DELETE' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		await this.fetchContent();
 	}
 
 	async deleteVideo(youtubeId: string): Promise<void> {
-		await this.fetchJson(`/api/media/${youtubeId}/video`, { method: 'DELETE' });
+		const response = await fetch(apiUrl(`/api/media/${youtubeId}/video`), { method: 'DELETE' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		await this.fetchContent();
 	}
 

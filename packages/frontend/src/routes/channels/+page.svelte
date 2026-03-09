@@ -5,9 +5,13 @@
 		YouTubeRssFeedResponse,
 		YouTubeChannelMeta
 	} from '$types/youtube.type';
+	import type { YouTubeSearchChannelItem } from '$types/youtube-search.type';
 	import { rightPanelService } from '$services/right-panel.service';
+	import { youtubeChannelSearchService } from '$services/youtube-channel-search.service';
 	import { youTubeCardAdapter } from '$adapters/classes/youtube-card.adapter';
 	import LibraryContentCard from '$components/libraries/LibraryContentCard.svelte';
+	import YouTubeSearchInput from '$components/youtube-search/YouTubeSearchInput.svelte';
+	import YouTubeChannelCard from '$components/youtube-search/YouTubeChannelCard.svelte';
 
 	interface YouTubeChannel {
 		id: string;
@@ -32,16 +36,24 @@
 		};
 	}
 
+	type SelectedChannel = { name: string; handle: string; subscriberText?: string };
+
+	// Subscriptions state
 	let channels: YouTubeChannel[] = $state([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let pagination = $state<TableDetailResponse['pagination'] | null>(null);
-
-	// Channel metadata (avatar, description, subscribers)
 	let channelMeta: Record<string, YouTubeChannelMeta> = $state({});
 
+	// Search state
+	const ytSearchState = youtubeChannelSearchService.state;
+	let isSearchMode = $derived(
+		$ytSearchState.channels.length > 0 || $ytSearchState.searching || !!$ytSearchState.query
+	);
+	let subscribedIds = $derived(new Set(channels.map((c) => c.id)));
+
 	// Feed drill-down state
-	let selectedChannel = $state<YouTubeChannel | null>(null);
+	let selectedChannel = $state<SelectedChannel | null>(null);
 	let feedVideos: YouTubeRssVideo[] = $state([]);
 	let feedLoading = $state(false);
 	let feedError = $state<string | null>(null);
@@ -66,7 +78,6 @@
 	}
 
 	async function fetchAllChannelMeta(rows: YouTubeChannel[]) {
-		// Populate from DB-cached fields first for instant display
 		const initial: Record<string, YouTubeChannelMeta> = {};
 		const needsFetch: YouTubeChannel[] = [];
 		for (const channel of rows) {
@@ -83,7 +94,6 @@
 		}
 		channelMeta = { ...channelMeta, ...initial };
 
-		// Fetch remaining from YouTube (backend will cache for next time)
 		for (const channel of needsFetch) {
 			if (channelMeta[channel.handle]) continue;
 			try {
@@ -93,9 +103,6 @@
 					continue;
 				}
 				const data: YouTubeChannelMeta = await res.json();
-				console.log(
-					`[channel-meta] ${channel.handle} avatar="${data.avatar}" subs="${data.subscriberText}"`
-				);
 				channelMeta = { ...channelMeta, [channel.handle]: data };
 			} catch (e) {
 				console.error(`[channel-meta] ${channel.handle} fetch failed`, e);
@@ -103,7 +110,7 @@
 		}
 	}
 
-	async function fetchChannelRss(channel: YouTubeChannel) {
+	async function fetchChannelRss(channel: SelectedChannel) {
 		selectedChannel = channel;
 		feedLoading = true;
 		feedError = null;
@@ -120,8 +127,28 @@
 		}
 	}
 
-	function handleVideoClick(video: YouTubeRssVideo) {
-		rightPanelService.open(video);
+	function handleDbChannelSelect(channel: YouTubeChannel) {
+		const meta = channelMeta[channel.handle];
+		fetchChannelRss({
+			name: channel.name,
+			handle: channel.handle,
+			subscriberText: channel.subscriber_text || meta?.subscriberText
+		});
+	}
+
+	function handleSearchChannelSelect(channel: YouTubeSearchChannelItem) {
+		const handle = extractHandle(channel.url);
+		if (!handle) return;
+		fetchChannelRss({
+			name: channel.name,
+			handle,
+			subscriberText: channel.subscriberText
+		});
+	}
+
+	function extractHandle(url: string): string | null {
+		if (url.startsWith('/@')) return url.slice(2);
+		return null;
 	}
 
 	function goBack() {
@@ -129,6 +156,32 @@
 		feedVideos = [];
 		feedError = null;
 		rightPanelService.close();
+	}
+
+	function handleSearch(query: string) {
+		youtubeChannelSearchService.search(query);
+	}
+
+	function handleClear() {
+		youtubeChannelSearchService.clearResults();
+	}
+
+	async function handleSubscribe(channel: YouTubeSearchChannelItem) {
+		const handle = extractHandle(channel.url);
+		if (!handle || !channel.channelId) return;
+		await fetch(apiUrl('/api/youtube/channel-subscribe'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				id: channel.channelId,
+				handle,
+				name: channel.name,
+				url: `https://www.youtube.com${channel.url}`,
+				subscriber_text: channel.subscriberText || null,
+				image_url: channel.thumbnail || null
+			})
+		});
+		await fetchChannels();
 	}
 
 	$effect(() => {
@@ -157,7 +210,9 @@
 			</button>
 			<h3 class="mt-2 text-lg font-bold">{selectedChannel.name}</h3>
 			<p class="text-sm text-base-content/60">
-				@{selectedChannel.handle} — Latest videos (RSS)
+				@{selectedChannel.handle}{selectedChannel.subscriberText
+					? ` · ${selectedChannel.subscriberText}`
+					: ''} — Latest videos (RSS)
 			</p>
 		</div>
 
@@ -183,28 +238,103 @@
 				{#each feedVideos as video (video.videoId)}
 					<LibraryContentCard
 						item={youTubeCardAdapter.fromRssVideo(video)}
-						onclick={() => handleVideoClick(video)}
+						onclick={() => rightPanelService.open(video)}
 					/>
 				{/each}
 			</div>
 		{/if}
 	{:else}
-		<!-- Channel grid view -->
-		<div>
-			<h3 class="text-lg font-bold">YouTube Channels</h3>
-			<p class="text-sm text-base-content/60">
-				Subscribed channels ({pagination ? pagination.total : '...'})
-			</p>
+		<!-- Search bar — always visible -->
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex-1">
+				<YouTubeSearchInput
+					query={$ytSearchState.query}
+					searching={$ytSearchState.searching}
+					onsearch={handleSearch}
+				/>
+			</div>
+			{#if isSearchMode}
+				<button class="btn shrink-0 btn-ghost btn-sm" onclick={handleClear}>Clear</button>
+			{/if}
 		</div>
 
-		{#if error}
+		<!-- Heading -->
+		<div class="mt-4">
+			{#if isSearchMode}
+				<h3 class="text-lg font-bold">Search results</h3>
+				{#if $ytSearchState.query}
+					<p class="text-sm text-base-content/60">for "{$ytSearchState.query}"</p>
+				{/if}
+			{:else}
+				<h3 class="text-lg font-bold">Channels</h3>
+				<p class="text-sm text-base-content/60">
+					Subscribed channels ({pagination ? pagination.total : '...'})
+				</p>
+			{/if}
+		</div>
+
+		<!-- Error banners -->
+		{#if error && !isSearchMode}
 			<div class="mt-4 alert alert-error">
 				<span>{error}</span>
 				<button class="btn btn-ghost btn-sm" onclick={() => (error = null)}>x</button>
 			</div>
 		{/if}
 
-		{#if loading}
+		{#if $ytSearchState.error}
+			<div class="mt-4 alert alert-error">
+				<span>{$ytSearchState.error}</span>
+				<button
+					class="btn btn-ghost btn-sm"
+					onclick={() => youtubeChannelSearchService.state.update((s) => ({ ...s, error: null }))}
+				>
+					Dismiss
+				</button>
+			</div>
+		{/if}
+
+		<!-- Channel grid -->
+		{#if isSearchMode}
+			{#if $ytSearchState.searching}
+				<div class="mt-6 flex justify-center">
+					<span class="loading loading-lg loading-spinner"></span>
+				</div>
+			{:else if $ytSearchState.channels.length > 0}
+				<div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+					{#each $ytSearchState.channels as channel (channel.channelId)}
+						<YouTubeChannelCard
+							{channel}
+							subscribed={subscribedIds.has(channel.channelId)}
+							onclick={extractHandle(channel.url)
+								? () => handleSearchChannelSelect(channel)
+								: undefined}
+							onsubscribe={handleSubscribe}
+						/>
+					{/each}
+				</div>
+
+				{#if $ytSearchState.continuation}
+					<div class="mt-4 flex justify-center">
+						<button
+							class="btn btn-outline btn-sm"
+							onclick={() => youtubeChannelSearchService.loadMore()}
+							disabled={$ytSearchState.loadingMore}
+						>
+							{#if $ytSearchState.loadingMore}
+								<span class="loading loading-sm loading-spinner"></span>
+								Loading...
+							{:else}
+								Load More
+							{/if}
+						</button>
+					</div>
+				{/if}
+			{:else if $ytSearchState.query && !$ytSearchState.searching}
+				<div class="mt-8 flex flex-col items-center gap-2 py-8 text-base-content/50">
+					<p class="text-sm">No channels found for "{$ytSearchState.query}"</p>
+				</div>
+			{/if}
+		{:else if loading}
 			<div class="mt-6 flex justify-center">
 				<span class="loading loading-lg loading-spinner"></span>
 			</div>
@@ -213,13 +343,13 @@
 				<p class="opacity-50">No channels found. Try resetting the database from the DB modal.</p>
 			</div>
 		{:else}
-			<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+			<div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
 				{#each channels as channel (channel.id)}
 					{@const meta = channelMeta[channel.handle]}
 					{@const avatar = channel.image_url || meta?.avatar}
 					{@const subscriberText = channel.subscriber_text || meta?.subscriberText}
 					<button
-						onclick={() => fetchChannelRss(channel)}
+						onclick={() => handleDbChannelSelect(channel)}
 						class="flex items-center gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
 					>
 						{#if avatar}

@@ -102,6 +102,30 @@ export interface YouTubeVideoInfo {
 	videoId: string;
 }
 
+// ===== Stream URL Extraction =====
+
+export interface YouTubeStreamFormat {
+	itag: number;
+	url: string;
+	mimeType: string;
+	bitrate: number;
+	contentLength: number | null;
+	width: number | null;
+	height: number | null;
+	qualityLabel: string | null;
+	audioQuality: string | null;
+	fps: number | null;
+	isAudioOnly: boolean;
+	isVideoOnly: boolean;
+	codec: string;
+	container: string;
+}
+
+export interface YouTubeStreamUrlResult {
+	formats: YouTubeStreamFormat[];
+	expiresAt: number;
+}
+
 // ===== Playlist Types =====
 
 export interface YouTubePlaylistVideo {

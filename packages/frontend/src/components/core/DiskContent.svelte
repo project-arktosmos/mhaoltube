@@ -62,9 +62,9 @@
 	});
 </script>
 
-<div class="mx-auto max-w-3xl p-6">
+<div class="p-2">
 	<div class="mb-6">
-		<h1 class="text-3xl font-bold">Disk</h1>
+		<h1 class="text-2xl font-bold">Disk</h1>
 		<p class="text-sm opacity-70">Library filesystem usage</p>
 		{#if fsData}
 			<div class="mt-1 flex items-center gap-2">

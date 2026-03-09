@@ -5,7 +5,7 @@ use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,40 @@ pub fn router() -> Router<AppState> {
         .route("/channel-feed", get(channel_feed))
         .route("/channel-rss", get(channel_rss))
         .route("/channel-meta", get(channel_meta))
+        .route("/channel-subscribe", post(channel_subscribe))
         .route("/image-proxy", get(image_proxy))
+}
+
+#[derive(Deserialize)]
+struct ChannelSubscribePayload {
+    id: String,
+    handle: String,
+    name: String,
+    url: String,
+    subscriber_text: Option<String>,
+    image_url: Option<String>,
+}
+
+async fn channel_subscribe(
+    State(state): State<AppState>,
+    Json(payload): Json<ChannelSubscribePayload>,
+) -> impl IntoResponse {
+    use crate::db::repo::youtube_channel::YouTubeChannelRow;
+    if payload.id.is_empty() || payload.handle.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "id and handle are required"}))).into_response();
+    }
+    let row = YouTubeChannelRow {
+        id: payload.id,
+        handle: payload.handle,
+        name: payload.name,
+        url: payload.url,
+        subscriber_text: payload.subscriber_text,
+        image_url: payload.image_url,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+    state.youtube_channels.insert(&row);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }
 
 /// Fetch YouTube oEmbed data for a video ID, using the cache if available.

@@ -71,7 +71,11 @@
       "Bash(/bin/sh -c 'set -a; . ./nonexistent 2>/dev/null; echo \"\"survived: $?\"\"')",
       "Bash(while read f)",
       "Bash(do echo \"=== $f ===\")",
-      "Bash(lsof -ti:1530 -ti:1531)"
+      "Bash(lsof -ti:1530 -ti:1531)",
+      "Bash(xxd)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(npx prettier --write src/components/core/RightPanel.svelte)",
+      "Bash(git commit:*)"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",

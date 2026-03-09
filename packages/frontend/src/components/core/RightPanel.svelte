@@ -47,6 +47,47 @@
 	let deletingAudio = $state(false);
 	let deletingVideo = $state(false);
 
+	let streamUrl = $state<string | null>(null);
+	let streamMimeType = $state<string | null>(null);
+	let streamLoading = $state(false);
+	let streamError = $state(false);
+
+	$effect(() => {
+		const v = video;
+		const hasLocalVideo = hasVideo;
+		const hasLocalAudio = hasAudio;
+		const mode = mediaMode;
+
+		const needsStream =
+			v && !((mode === 'video' && hasLocalVideo) || (mode === 'audio' && hasLocalAudio));
+
+		if (needsStream && v) {
+			streamLoading = true;
+			streamError = false;
+			streamUrl = null;
+
+			youtubeService.fetchStreamUrls(v.videoId).then((result) => {
+				if (!result) {
+					streamError = true;
+					streamLoading = false;
+					return;
+				}
+				const best = youtubeService.selectBestMuxedFormat(result);
+				if (best) {
+					streamUrl = best.url;
+					streamMimeType = best.mimeType;
+				} else {
+					streamError = true;
+				}
+				streamLoading = false;
+			});
+		} else {
+			streamUrl = null;
+			streamLoading = false;
+			streamError = false;
+		}
+	});
+
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -137,6 +178,15 @@
 					<audio bind:this={audioEl} controls autoplay class="w-full">
 						<source src={libraryService.streamAudioUrl(video.videoId)} type="audio/x-m4a" />
 					</audio>
+				{:else if streamLoading}
+					<div class="flex aspect-video w-full items-center justify-center rounded-lg bg-base-300">
+						<span class="loading loading-md loading-spinner"></span>
+					</div>
+				{:else if streamUrl}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video controls autoplay class="aspect-video w-full rounded-lg">
+						<source src={streamUrl} type={streamMimeType ?? 'video/mp4'} />
+					</video>
 				{:else}
 					<iframe
 						src="https://www.youtube.com/embed/{video.videoId}"
