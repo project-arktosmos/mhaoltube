@@ -77,7 +77,9 @@
       "Bash(npx prettier --write src/components/core/RightPanel.svelte)",
       "Bash(git commit:*)",
       "Bash(xargs ls -la)",
-      "Bash(od -c /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/components/core/RightPanel.svelte)"
+      "Bash(od -c /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/components/core/RightPanel.svelte)",
+      "Bash(gh pr list --state open)",
+      "Bash(npx prettier --write packages/frontend/src/components/core/RightPanel.svelte)"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",
