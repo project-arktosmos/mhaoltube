@@ -1,6 +1,4 @@
 <script lang="ts">
-	import classNames from 'classnames';
-
 	type MediaSource =
 		| { type: 'video'; src: string; mimeType?: string }
 		| { type: 'audio'; src: string; mimeType?: string; thumbnail?: string }
@@ -151,15 +149,11 @@
 	}
 
 	function toggleFullscreen() {
-		const wrapper = mediaEl?.closest('[data-media-player]') as HTMLElement | null;
-		if (!wrapper) return;
-
 		if (getFullscreenElement()) {
 			exitFs().catch(() => {});
-			fullscreen = false;
 		} else {
-			requestFs(wrapper).catch(() => {});
-			fullscreen = true;
+			const wrapper = mediaEl?.closest('[data-media-player]') as HTMLElement | null;
+			if (wrapper) requestFs(wrapper).catch(() => {});
 		}
 	}
 
@@ -202,20 +196,12 @@
 		></iframe>
 	</div>
 {:else}
-	<div
-		data-media-player
-		class={classNames('flex flex-col gap-0 overflow-hidden rounded-lg bg-black', {
-			'fixed inset-0 z-50': fullscreen
-		})}
-	>
+	<div data-media-player class="flex flex-col gap-0 overflow-hidden rounded-lg bg-black">
 		{#if source.type === 'video'}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
 				bind:this={mediaEl}
-				class={classNames('w-full cursor-pointer', {
-					'aspect-video': !fullscreen,
-					'flex-1 object-contain': fullscreen
-				})}
+				class="w-full cursor-pointer"
 				src={source.src}
 				ontimeupdate={handleTimeUpdate}
 				onloadedmetadata={handleLoadedMetadata}
