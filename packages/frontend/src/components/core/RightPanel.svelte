@@ -187,20 +187,47 @@
 
 {#if video}
 	<aside class={wrapperClasses}>
-		<div class={classNames('flex flex-col gap-4 p-4', compact ? 'md:min-w-[13.375rem]' : 'md:min-w-[26.75rem]')}>
+		<div
+			class={classNames(
+				'flex flex-col gap-4 p-4',
+				compact ? 'md:min-w-[13.375rem]' : 'md:min-w-[26.75rem]'
+			)}
+		>
 			<div class="flex items-center justify-between">
 				<button
-					class="btn btn-ghost btn-xs hidden md:flex"
+					class="btn hidden btn-ghost btn-xs md:flex"
 					onclick={() => (compact = !compact)}
 					aria-label={compact ? 'Expand panel' : 'Collapse panel'}
 				>
 					{#if compact}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-4 w-4"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+							/>
 						</svg>
 					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-4 w-4"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 5l7 7-7 7M5 5l7 7-7 7"
+							/>
 						</svg>
 					{/if}
 				</button>
