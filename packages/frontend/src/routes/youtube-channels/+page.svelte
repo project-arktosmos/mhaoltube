@@ -6,6 +6,8 @@
 		YouTubeChannelMeta
 	} from '$types/youtube.type';
 	import { rightPanelService } from '$services/right-panel.service';
+	import { youTubeCardAdapter } from '$adapters/classes/youtube-card.adapter';
+	import LibraryContentCard from '$components/libraries/LibraryContentCard.svelte';
 
 	interface YouTubeChannel {
 		id: string;
@@ -100,7 +102,6 @@
 		feedLoading = true;
 		feedError = null;
 		feedVideos = [];
-		rightPanelService.close();
 		try {
 			const res = await fetch(apiUrl(`/api/youtube/channel-rss?handle=${channel.handle}`));
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -111,6 +112,10 @@
 		} finally {
 			feedLoading = false;
 		}
+	}
+
+	function handleVideoClick(video: YouTubeRssVideo) {
+		rightPanelService.open(video);
 	}
 
 	function goBack() {
@@ -166,30 +171,14 @@
 				<p class="opacity-50">No videos found for this channel.</p>
 			</div>
 		{:else}
-			<div class="mt-4 flex flex-col gap-2">
+			<div
+				class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+			>
 				{#each feedVideos as video (video.videoId)}
-					<button
-						onclick={() => rightPanelService.open(video)}
-						class="flex w-full gap-3 rounded-lg bg-base-200 p-3 text-left transition-colors hover:bg-base-300"
-					>
-						<div class="shrink-0">
-							<img
-								src={video.thumbnail}
-								alt={video.title}
-								class="h-20 w-36 rounded-md object-cover"
-								loading="lazy"
-							/>
-						</div>
-						<div class="min-w-0 flex-1">
-							<p class="line-clamp-2 font-medium">{video.title}</p>
-							<p class="mt-1 text-sm text-base-content/60">
-								{video.viewsText}
-							</p>
-							<p class="text-sm text-base-content/60">
-								{video.publishedText}
-							</p>
-						</div>
-					</button>
+					<LibraryContentCard
+						item={youTubeCardAdapter.fromRssVideo(video)}
+						onclick={() => handleVideoClick(video)}
+					/>
 				{/each}
 			</div>
 		{/if}

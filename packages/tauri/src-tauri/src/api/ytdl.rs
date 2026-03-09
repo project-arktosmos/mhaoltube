@@ -291,6 +291,7 @@ async fn get_settings(State(state): State<AppState>) -> impl IntoResponse {
         "poToken": state.settings.get("ytdl.poToken").unwrap_or_default(),
         "visitorData": state.settings.get("ytdl.visitorData").unwrap_or_default(),
         "cookies": state.settings.get("ytdl.cookies").unwrap_or_default(),
+        "mediaMode": state.settings.get("ytdl.mediaMode").unwrap_or_else(|| "video".to_string()),
     });
     Json(settings)
 }

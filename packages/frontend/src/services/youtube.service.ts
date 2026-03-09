@@ -15,6 +15,7 @@ import {
 	type AudioQuality,
 	type AudioFormat,
 	type DownloadMode,
+	type MediaMode,
 	type VideoQuality,
 	type VideoFormat
 } from '$types/youtube.type';
@@ -24,6 +25,7 @@ const API_PREFIX = '/api/ytdl';
 // Default settings (used before server fetch completes)
 const initialSettings: YouTubeSettings = {
 	id: 'youtube-settings',
+	mediaMode: 'video',
 	downloadMode: 'both',
 	defaultQuality: 'best',
 	defaultFormat: 'aac',
@@ -460,6 +462,10 @@ class YouTubeService {
 				error: `Failed to save settings: ${errorMsg}`
 			}));
 		}
+	}
+
+	setMediaMode(mode: MediaMode): void {
+		this.updateSettings({ mediaMode: mode });
 	}
 
 	setDownloadMode(mode: DownloadMode): void {

@@ -33,6 +33,10 @@ export const AUDIO_FORMAT_OPTIONS: { value: AudioFormat; label: string; extensio
 	{ value: 'opus', label: 'Opus', extension: 'opus' }
 ];
 
+// ===== Media Mode =====
+
+export type MediaMode = 'audio' | 'video';
+
 // ===== Download Mode =====
 
 export type DownloadMode = 'audio' | 'video' | 'both';
@@ -171,6 +175,7 @@ export interface YouTubeContent {
 
 export interface YouTubeSettings {
 	id: ID;
+	mediaMode: MediaMode;
 	downloadMode: DownloadMode;
 	defaultQuality: AudioQuality;
 	defaultFormat: AudioFormat;

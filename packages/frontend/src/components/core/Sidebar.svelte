@@ -17,7 +17,9 @@
 		return $page.url.pathname === route.path || $page.url.pathname.startsWith(route.path + '/');
 	}
 
-	let wrapperClasses = $derived(classNames('menu w-56 bg-base-200 p-4 hidden lg:flex', classes));
+	let wrapperClasses = $derived(
+		classNames('menu w-56 bg-base-200 p-4 hidden lg:flex flex-col gap-0', classes)
+	);
 </script>
 
 <aside class={wrapperClasses}>

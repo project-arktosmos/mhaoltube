@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { youtubeSearchService } from '$services/youtube-search.service';
 	import { rightPanelService } from '$services/right-panel.service';
+	import { youTubeCardAdapter } from '$adapters/classes/youtube-card.adapter';
 	import YouTubeSearchInput from '$components/youtube-search/YouTubeSearchInput.svelte';
-	import YouTubeSearchResultCard from '$components/youtube-search/YouTubeSearchResultCard.svelte';
+	import LibraryContentCard from '$components/libraries/LibraryContentCard.svelte';
 	import type { YouTubeSearchItem } from '$types/youtube-search.type';
 
 	const searchState = youtubeSearchService.state;
@@ -72,9 +73,12 @@
 			<span class="loading loading-lg loading-spinner"></span>
 		</div>
 	{:else if $searchState.results.length > 0}
-		<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
 			{#each $searchState.results as item (item.url)}
-				<YouTubeSearchResultCard {item} onselect={handleSelect} />
+				<LibraryContentCard
+					item={youTubeCardAdapter.fromSearchItem(item)}
+					onclick={() => handleSelect(item)}
+				/>
 			{/each}
 		</div>
 

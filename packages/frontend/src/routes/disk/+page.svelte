@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 	import { apiUrl } from '$lib/api-base';
 	import type { LibraryFs, LibraryFsEntry } from '$types/library.type';
 
@@ -43,7 +44,12 @@
 		<h1 class="text-3xl font-bold">Disk</h1>
 		<p class="text-sm opacity-70">Library filesystem usage</p>
 		{#if fsData}
-			<p class="mt-1 truncate font-mono text-xs opacity-50">{fsData.path}</p>
+			<div class="mt-1 flex items-center gap-2">
+				<p class="truncate font-mono text-xs opacity-50">{fsData.path}</p>
+				<button class="btn btn-xs btn-ghost opacity-60" onclick={() => invoke('open_path', { path: fsData!.path })}>
+					open
+				</button>
+			</div>
 		{/if}
 	</div>
 

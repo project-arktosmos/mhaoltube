@@ -234,6 +234,28 @@ impl AppState {
     }
 }
 
+// --- Tauri commands ---
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // --- Tauri desktop entry point ---
 
 const SERVER_PORT: u16 = 1530;
@@ -245,6 +267,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![open_path])
         .setup(|_app| {
             // Start the Rust backend server unless one is already running on the port
             let addr = format!("{}:{}", SERVER_HOST, SERVER_PORT);
@@ -260,6 +283,7 @@ pub fn run() {
                     state.seed_default_library();
                     state.initialize_modules();
                     state.sync_downloads_to_content();
+                    #[cfg(not(target_os = "android"))]
                     state.start_content_sync_task();
                     let router = api::build_router(state);
                     let addr = format!("{}:{}", SERVER_HOST, SERVER_PORT);

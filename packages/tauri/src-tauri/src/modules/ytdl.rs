@@ -68,6 +68,11 @@ impl Module for YtdlModule {
                     default: String::new(),
                     env_key: Some("COOKIES".to_string()),
                 },
+                ModuleSettingDef {
+                    key: "ytdl.mediaMode".to_string(),
+                    default: "video".to_string(),
+                    env_key: None,
+                },
             ],
             link_sources: vec![ModuleLinkSource {
                 service: "youtube".to_string(),
