@@ -143,7 +143,7 @@ async fn channel_feed(Query(query): Query<ChannelFeedQuery>) -> impl IntoRespons
         "context": {
             "client": {
                 "clientName": "WEB",
-                "clientVersion": "2.20240101.00.00",
+                "clientVersion": "2.20260301.01.00",
                 "hl": "en",
                 "gl": "US"
             }
@@ -161,6 +161,10 @@ async fn channel_feed(Query(query): Query<ChannelFeedQuery>) -> impl IntoRespons
     let resp = match client
         .post(INNERTUBE_BROWSE_URL)
         .header("Content-Type", "application/json")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+        .header("X-YouTube-Client-Name", "1")
+        .header("X-YouTube-Client-Version", "2.20260301.01.00")
+        .header("Origin", "https://www.youtube.com")
         .json(&body)
         .send()
         .await
@@ -449,6 +453,7 @@ async fn fetch_channel_page(handle: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
     let resp = client
         .get(&page_url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
