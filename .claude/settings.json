@@ -79,7 +79,9 @@
       "Bash(xargs ls -la)",
       "Bash(od -c /Users/bearni/project-arktosmos/mhaoltube.git/packages/frontend/src/components/core/RightPanel.svelte)",
       "Bash(gh pr list --state open)",
-      "Bash(npx prettier --write packages/frontend/src/components/core/RightPanel.svelte)"
+      "Bash(npx prettier --write packages/frontend/src/components/core/RightPanel.svelte)",
+      "Bash(java -version)",
+      "Bash(gradle --version)"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",
