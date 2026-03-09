@@ -13,7 +13,9 @@
 
 	const ACTIVE_STATES = ['pending', 'fetching', 'downloading', 'muxing'];
 
-	let cardItems = $derived($libState.content.map(youTubeCardAdapter.fromContent.bind(youTubeCardAdapter)));
+	let cardItems = $derived(
+		$libState.content.map(youTubeCardAdapter.fromContent.bind(youTubeCardAdapter))
+	);
 
 	let activeDownloadMap = $derived(
 		new Map<string, YouTubeDownloadProgress>(

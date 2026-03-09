@@ -46,7 +46,10 @@
 		{#if fsData}
 			<div class="mt-1 flex items-center gap-2">
 				<p class="truncate font-mono text-xs opacity-50">{fsData.path}</p>
-				<button class="btn btn-xs btn-ghost opacity-60" onclick={() => invoke('open_path', { path: fsData!.path })}>
+				<button
+					class="btn opacity-60 btn-ghost btn-xs"
+					onclick={() => invoke('open_path', { path: fsData!.path })}
+				>
 					open
 				</button>
 			</div>

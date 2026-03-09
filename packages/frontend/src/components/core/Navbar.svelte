@@ -30,13 +30,13 @@
 	<div class="flex-1">
 		<a href="/" class="btn text-xl btn-ghost">Mhaol<span class="text-primary">Tube</span></a>
 	</div>
-	<div class="flex-none flex items-center gap-2">
+	<div class="flex flex-none items-center gap-2">
 		<div class="indicator">
 			{#if activeCount > 0}
-				<span class="badge badge-primary badge-xs indicator-item">{activeCount}</span>
+				<span class="indicator-item badge badge-xs badge-primary">{activeCount}</span>
 			{/if}
 			<button
-				class="btn btn-sm btn-ghost px-4"
+				class="btn px-4 btn-ghost btn-sm"
 				onclick={() => (queueOpen = true)}
 				aria-label="Download queue"
 				title="Download queue"
