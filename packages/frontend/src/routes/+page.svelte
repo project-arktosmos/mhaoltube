@@ -285,29 +285,12 @@
 </script>
 
 <div class="container mx-auto p-4">
-	<div class="mb-6 flex items-end justify-between gap-4">
-		<div class="shrink-0">
-			{#if isSearchMode}
-				<h1 class="text-3xl font-bold">Search results</h1>
-				<p class="text-sm opacity-70">YouTube videos matching your query</p>
-			{:else}
-				<h1 class="text-3xl font-bold">Library</h1>
-				<p class="text-sm opacity-70">Your downloaded YouTube content</p>
-			{/if}
-		</div>
-
-		<div class="flex flex-1 items-center gap-2">
-			<div class="flex-1">
-				<YouTubeSearchInput
-					query={$searchState.query}
-					searching={$searchState.searching}
-					onsearch={handleSearch}
-				/>
-			</div>
-			{#if isSearchMode}
-				<button class="btn btn-ghost btn-sm" onclick={handleClear}>Clear</button>
-			{/if}
-		</div>
+	<div class="mb-6">
+		<YouTubeSearchInput
+			query={$searchState.query}
+			searching={$searchState.searching}
+			onsearch={handleSearch}
+		/>
 	</div>
 
 	{#if $searchState.error}

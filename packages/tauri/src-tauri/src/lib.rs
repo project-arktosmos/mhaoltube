@@ -4,7 +4,6 @@ pub mod modules;
 
 use db::repo::*;
 use db::DbPool;
-#[cfg(not(target_os = "android"))]
 use mhaoltube_yt_dlp::DownloadManager;
 use modules::ModuleRegistry;
 use parking_lot::RwLock;
@@ -67,13 +66,13 @@ pub struct AppState {
     pub youtube_downloads: YouTubeDownloadRepo,
     pub youtube_channels: YouTubeChannelRepo,
     pub module_registry: Arc<RwLock<ModuleRegistry>>,
-    #[cfg(not(target_os = "android"))]
+    pub data_dir: PathBuf,
     pub ytdl_manager: Arc<DownloadManager>,
 }
 
 impl AppState {
     /// Create a new AppState with a database at the given path (or in-memory if None).
-    pub fn new(db_path: Option<&Path>) -> Result<Self, rusqlite::Error> {
+    pub fn new(db_path: Option<&Path>, data_dir: PathBuf) -> Result<Self, rusqlite::Error> {
         let db = db::open_database(db_path)?;
 
         Ok(Self {
@@ -84,7 +83,7 @@ impl AppState {
             youtube_downloads: YouTubeDownloadRepo::new(Arc::clone(&db)),
             youtube_channels: YouTubeChannelRepo::new(Arc::clone(&db)),
             module_registry: Arc::new(RwLock::new(ModuleRegistry::new())),
-            #[cfg(not(target_os = "android"))]
+            data_dir,
             ytdl_manager: {
                 let config = mhaoltube_yt_dlp::YtDownloadConfig::from_env();
                 Arc::new(DownloadManager::new(config))
@@ -96,19 +95,14 @@ impl AppState {
     /// Register and initialize all built-in modules.
     pub fn initialize_modules(&self) {
         use modules::youtube_meta::YoutubeMetaModule;
-        #[cfg(not(target_os = "android"))]
         use modules::ytdl::YtdlModule;
 
         let mut registry = self.module_registry.write();
 
         registry.register(Box::new(YoutubeMetaModule));
-
-        #[cfg(not(target_os = "android"))]
-        {
-            registry.register(Box::new(YtdlModule {
-                manager: Arc::clone(&self.ytdl_manager),
-            }));
-        }
+        registry.register(Box::new(YtdlModule {
+            manager: Arc::clone(&self.ytdl_manager),
+        }));
 
         registry.initialize(self);
     }
@@ -165,7 +159,6 @@ impl AppState {
     /// Unlike the SSE handler, this subscriber runs for the lifetime of the process and
     /// is not tied to any browser client being connected. Every completed download will
     /// be recorded in `youtube_content` regardless of SSE state.
-    #[cfg(not(target_os = "android"))]
     pub fn start_content_sync_task(&self) {
         use mhaoltube_yt_dlp::{manager::SseEvent, DownloadState};
         use tokio::sync::broadcast::error::RecvError;
@@ -216,7 +209,7 @@ impl AppState {
         if self.libraries.get(Self::DEFAULT_LIBRARY_ID).is_some() {
             return;
         }
-        let library_path = default_data_dir();
+        let library_path = &self.data_dir;
         let library_path_str = library_path.to_string_lossy();
         self.libraries.insert(
             Self::DEFAULT_LIBRARY_ID,
@@ -268,7 +261,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![open_path])
-        .setup(|_app| {
+        .setup(|app| {
             // Start the Rust backend server unless one is already running on the port
             let addr = format!("{}:{}", SERVER_HOST, SERVER_PORT);
             let already_running = std::net::TcpStream::connect(&addr).is_ok();
@@ -276,14 +269,28 @@ pub fn run() {
             if already_running {
                 eprintln!("Backend already running on {}, skipping embedded server", addr);
             } else {
-                let db_path = default_data_dir().join("mhaoltube.db");
+                // On Android, dirs::document_dir() is unavailable; use Tauri's
+                // app data directory so the DB lands in private app storage.
+                #[cfg(target_os = "android")]
+                let data_dir = {
+                    use tauri::Manager;
+                    app.path()
+                        .data_dir()
+                        .expect("failed to resolve app data dir")
+                        .join("mhaoltube")
+                };
+                #[cfg(not(target_os = "android"))]
+                let data_dir = default_data_dir();
+                let _ = app; // suppress unused warning on desktop
+
+                std::fs::create_dir_all(&data_dir).ok();
+                let db_path = data_dir.join("mhaoltube.db");
                 tauri::async_runtime::spawn(async move {
-                    let state = AppState::new(Some(db_path.as_path()))
+                    let state = AppState::new(Some(db_path.as_path()), data_dir)
                         .expect("failed to initialize backend");
                     state.seed_default_library();
                     state.initialize_modules();
                     state.sync_downloads_to_content();
-                    #[cfg(not(target_os = "android"))]
                     state.start_content_sync_task();
                     let router = api::build_router(state);
                     let addr = format!("{}:{}", SERVER_HOST, SERVER_PORT);

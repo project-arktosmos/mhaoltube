@@ -170,7 +170,7 @@ async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
     // live SQLite db file. Deleting the db file while the connection is open
     // causes the WAL salt to mismatch on the next write, silently discarding
     // DDL changes and leaving the old data in place.
-    let library_dir = crate::default_data_dir();
+    let library_dir = state.data_dir.clone();
     for subdir in &["audio", "video"] {
         let dir = library_dir.join(subdir);
         if dir.exists() {
@@ -259,7 +259,7 @@ async fn reset_database(State(state): State<AppState>) -> impl IntoResponse {
 /// Scan the library's audio/ and video/ subdirectories and remove any
 /// youtube_content rows whose files no longer exist on disk.
 fn sync_library(state: &crate::AppState) {
-    let library_dir = crate::default_data_dir();
+    let library_dir = state.data_dir.clone();
     let rows = state.youtube_content.get_all();
 
     for row in rows {

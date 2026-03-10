@@ -37,7 +37,9 @@ async fn run_server() {
         .map(PathBuf::from)
         .unwrap_or_else(|| mhaoltube::default_data_dir().join("mhaoltube.db"));
 
-    let state = AppState::new(Some(db_path.as_path())).expect("Failed to initialize database");
+    let data_dir = mhaoltube::default_data_dir();
+    let state =
+        AppState::new(Some(db_path.as_path()), data_dir).expect("Failed to initialize database");
 
     state.seed_default_library();
     state.initialize_modules();
