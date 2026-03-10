@@ -60,15 +60,13 @@
 								</svg>
 							</div>
 							<div class="flex flex-col gap-1">
-								<span class="text-lg font-semibold"
-									>{$_(`platforms.${platform.key}`)}</span
-								>
+								<span class="text-lg font-semibold">{$_(`platforms.${platform.key}`)}</span>
 								{#if hasLink}
 									<a
 										href={platform.url}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="btn btn-primary btn-sm w-fit"
+										class="btn w-fit btn-sm btn-primary"
 									>
 										{$_('platforms.download')}
 									</a>
@@ -79,8 +77,7 @@
 						<div class="flex flex-col gap-2 text-sm text-base-content/70">
 							<p>{$_(`platforms.${platform.installKey}`)}</p>
 							{#if platform.command}
-								<code
-									class="rounded-lg bg-base-300 px-3 py-2 font-mono text-xs text-base-content"
+								<code class="rounded-lg bg-base-300 px-3 py-2 font-mono text-xs text-base-content"
 									>{platform.command}</code
 								>
 							{/if}
