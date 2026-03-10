@@ -81,7 +81,11 @@
       "Bash(gh pr list --state open)",
       "Bash(npx prettier --write packages/frontend/src/components/core/RightPanel.svelte)",
       "Bash(java -version)",
-      "Bash(gradle --version)"
+      "Bash(gradle --version)",
+      "Bash(adb devices)",
+      "Bash(emulator -list-avds)",
+      "Read(//Users/bearni/Library/Android/sdk/emulator/**)",
+      "Bash(~/Library/Android/sdk/emulator/emulator -list-avds)"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",
