@@ -21,15 +21,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes '### macOS
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes '### macOS
           If the app is blocked by Gatekeeper, open Terminal and run:
           ```
           xattr -cr /Applications/Mhaoltube.app
           ```
           Then open the app normally.' \
-            --latest
+              --latest
+          fi
 
   build-linux-tauri:
     needs: create-release
