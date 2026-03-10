@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "tauri dev",
 		"build": "tauri build",
-		"android:dev": "sh -c 'if ! adb devices | grep -q \"emulator\\|device$\" || [ $(adb devices | grep -c -E \"emulator|device$\") -eq 0 ]; then AVD=$(\"$HOME/Library/Android/sdk/emulator/emulator\" -list-avds | head -1) && \"$HOME/Library/Android/sdk/emulator/emulator\" -avd \"$AVD\" &disown && echo \"Waiting for emulator to boot...\" && adb wait-for-device && adb shell \"while [[ \\\"$(getprop sys.boot_completed)\\\" != \\\"1\\\" ]]; do sleep 1; done\" && echo \"Emulator ready.\"; fi' && tauri android build --apk && (adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk || (adb uninstall com.arktosmos.mhaoltube && adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk)) && adb shell am start -n com.arktosmos.mhaoltube/.MainActivity",
+		"android:dev": "sh scripts/ensure-emulator.sh && sh scripts/android-dev-build.sh",
 		"android:build": "tauri android build --apk"
 	},
 	"devDependencies": {

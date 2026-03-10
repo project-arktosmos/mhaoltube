@@ -1,4 +1,3 @@
-import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -14,13 +13,6 @@ val tauriProperties = Properties().apply {
     }
 }
 
-val keystoreProperties = Properties().apply {
-    val propFile = rootProject.file("keystore.properties")
-    if (propFile.exists()) {
-        FileInputStream(propFile).use { load(it) }
-    }
-}
-
 android {
     compileSdk = 36
     namespace = "com.arktosmos.mhaoltube"
@@ -31,17 +23,6 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
-    }
-    signingConfigs {
-        create("release") {
-            val storeFilePath = keystoreProperties["storeFile"] as? String
-            if (storeFilePath != null) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["password"] as String
-                storeFile = file(storeFilePath)
-                storePassword = keystoreProperties["password"] as String
-            }
-        }
     }
     buildTypes {
         getByName("debug") {
@@ -56,7 +37,6 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
@@ -65,12 +45,8 @@ android {
             )
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "1.8"
     }
     buildFeatures {
         buildConfig = true
@@ -78,7 +54,7 @@ android {
 }
 
 rust {
-    rootDirRel = "../../../"
+    rootDirRel = "../../../../"
 }
 
 dependencies {
