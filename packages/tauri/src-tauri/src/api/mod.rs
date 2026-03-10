@@ -6,7 +6,6 @@ pub mod libraries;
 pub mod media;
 pub mod youtube;
 pub mod youtube_search;
-#[cfg(not(target_os = "android"))]
 pub mod ytdl;
 
 use crate::AppState;
@@ -28,7 +27,6 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/youtube", youtube::router())
         .nest("/api/youtube-search", youtube_search::router());
 
-    #[cfg(not(target_os = "android"))]
     let router = router.nest("/api/ytdl", ytdl::router());
 
     #[cfg(feature = "embed-frontend")]

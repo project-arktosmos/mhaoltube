@@ -37,12 +37,10 @@ chrono = "0.4"
 dirs = "5"
 anyhow = "1"
 urlencoding = "2"
+mhaoltube-yt-dlp = { path = "../../rust-yt-dlp" }
 quick-xml = "0.37"
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-mhaoltube-yt-dlp = { path = "../../rust-yt-dlp" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

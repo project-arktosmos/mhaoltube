@@ -1,5 +1,4 @@
 pub mod youtube_meta;
-#[cfg(not(target_os = "android"))]
 pub mod ytdl;
 
 use crate::AppState;

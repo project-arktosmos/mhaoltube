@@ -28,9 +28,10 @@
 	let columns = $state(6);
 	let visibleRows = $state(1);
 
-	let maxVisibleSlots = $derived(columns * visibleRows);
+	let effectiveRows = $derived(columns <= 2 ? Math.max(visibleRows, 3) : visibleRows);
+	let maxVisibleSlots = $derived(columns * effectiveRows);
 	let hasMore = $derived(items.length > maxVisibleSlots);
-	let isExpanded = $derived(visibleRows > 1);
+	let isExpanded = $derived(effectiveRows > (columns <= 2 ? 3 : 1));
 	let visibleItems = $derived(
 		hasMore ? items.slice(0, maxVisibleSlots - 1) : items.slice(0, maxVisibleSlots)
 	);
@@ -60,7 +61,7 @@
 	}
 
 	function showLess() {
-		visibleRows = 1;
+		visibleRows = columns <= 2 ? 3 : 1;
 	}
 </script>
 

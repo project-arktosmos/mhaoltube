@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { assets } from '$app/paths';
 	import { _ } from 'svelte-i18n';
 </script>
 
 <section
 	class="hero bg-cover bg-center bg-no-repeat"
-	style:background-image="url('/pexels-enginakyurt-1493226.jpg')"
+	style:background-image="url('{assets}/pexels-enginakyurt-1493226.jpg')"
 >
 	<div class="hero-overlay bg-black/50"></div>
 	<div class="hero-content flex-col py-[100px] text-center text-white">

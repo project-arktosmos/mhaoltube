@@ -2,6 +2,10 @@
 @plugin 'daisyui';
 @import 'common/css/themes.css';
 
+body {
+	padding-top: env(safe-area-inset-top, 0px);
+}
+
 * {
 	scrollbar-width: thin;
 	scrollbar-color: color-mix(in oklch, var(--color-base-content) 20%, transparent) transparent;

@@ -46,7 +46,11 @@
 		"windows": "Windows",
 		"linux": "Linux",
 		"download": "Download",
-		"macos_note": "Run xattr -cr /Applications/Mhaoltube.app if blocked by Gatekeeper"
+		"macos_install": "If blocked by Gatekeeper, open Terminal and run:",
+		"macos_command": "xattr -cr /Applications/Mhaoltube.app",
+		"android_install": "Download the APK and install it directly. You may need to allow installs from unknown sources in your device settings.",
+		"windows_install": "Download and run the installer. If SmartScreen warns you, click \"More info\" then \"Run anyway\".",
+		"linux_install": "Download the AppImage, make it executable, and run:"
 	},
 	"footer": {
 		"tagline": "Open-source alternative YouTube client",
