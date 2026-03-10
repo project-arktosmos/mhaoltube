@@ -99,7 +99,8 @@
       "Bash(adb shell pm clear com.google.android.gms)",
       "Bash(adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk)",
       "Bash(adb shell getprop ro.product.cpu.abi)",
-      "Bash(chmod +x /Users/bearni/project-arktosmos/mhaoltube.git/packages/tauri/scripts/android-dev-build.sh)"
+      "Bash(chmod +x /Users/bearni/project-arktosmos/mhaoltube.git/packages/tauri/scripts/android-dev-build.sh)",
+      "Bash(grep -E \"\\\\.\\(apk|aab|bundle\\)$\")"
     ],
     "additionalDirectories": [
       "/Users/bearni/project-arktosmos/mhaoltube.git/.git",

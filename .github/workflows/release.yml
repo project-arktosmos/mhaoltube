@@ -203,7 +203,7 @@ jobs:
       - name: Rename APK
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          cp packages/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+          cp packages/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk \
              mhaoltube-${TAG}-android-universal.apk
 
       - name: Upload to release
